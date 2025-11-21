@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>貨車記帳助手 - HTML單檔版</title>
+    <!-- 引入 Tailwind CSS 確保樣式正確 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 React/ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        /* 確保字體和介面清晰 */
+        body { font-family: "Inter", sans-serif; }
+        /* 針對整個 App 容器，限制最大寬度以模擬手機介面 */
+        #root { 
+            max-width: 480px; 
+            margin: 0 auto; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Lucide Icons (以單一元件形式定義)
+        const { useState, useEffect, useMemo } = React;
+
+        // 定義 Lucide Icons (使用 SVG 確保不用額外安裝套件)
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const icons = {
+                ChevronLeft: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>,
+                ChevronRight: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
+                Plus: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>,
+                Settings: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.44a2 2 0 0 1-2 2h-.44a2 2 0 0 0-2 2v.44a2 2 0 0 1-2 2h-.44a2 2 0 0 0-2 2v.44a2 2 0 0 1 2 2h.44a2 2 0 0 0 2 2v.44a2 2 0 0 1 2 2h.44a2 2 0 0 0 2 2v.44a2 2 0 0 1 2 2h.44a2 2 0 0 0 2 2v-.44a2 2 0 0 1 2-2h.44a2 2 0 0 0 2-2v-.44a2 2 0 0 1 2-2h.44a2 2 0 0 0 2-2v-.44a2 2 0 0 1 2-2h.44a2 2 0 0 0 2-2v-.44a2 2 0 0 1-2-2h-.44a2 2 0 0 0-2-2v-.44a2 2 0 0 1-2-2h-.44a2 2 0 0 0-2-2v-.44a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+                Truck: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 18H3c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v10h4c1.1 0 2 .9 2 2v1c0 1.1-.9 2-2 2h-1c-.5 0-1-.2-1.4-.6L17 19h-1.4c-.4.4-1.2.6-1.6.6H5c-.5 0-1-.2-1.4-.6L2.6 19H3c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h2zm11 2a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM7 20a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>,
+                Package: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.16"/><path d="m7.5 19.73 9-5.16"/><path d="M3.29 7.33l7.98-4.58a1 1 0 0 1 1.44 0l7.98 4.58a1 1 0 0 1 .5 1.05v7.24a1 1 0 0 1-.5 1.05l-7.98 4.58a1 1 0 0 1-1.44 0l-7.98-4.58a1 1 0 0 1-.5-1.05V8.38a1 1 0 0 1 .5-1.05z"/><path d="M12 22v-8"/><path d="M12 10V2"/></svg>,
+                MapPin: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>,
+                User: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+                Trash2: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
+                Save: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>,
+                LogOut: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+                Search: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+                Download: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+                DollarSign: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+                LinkIcon: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07L13 7.07"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07L11 16.93"/></svg>,
+                RefreshCw: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg>,
+                CheckCircle: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>,
+                AlertCircle: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+                Loader2: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v3h-3"/><path d="M21.5 10a9.5 9.5 0 1 1-8.5-8.5"/></svg>,
+            };
+            const SVGComponent = icons[name];
+            if (!SVGComponent) return null;
+            return <SVGComponent width={size} height={size} className={className} />;
+        };
+
+        // --- 設定常數 ---
+        const STORAGE_URL_KEY = 'truck_bookkeeping_url';
+        const STORAGE_CACHE_KEY = 'truck_bookkeeping_cache';
+
+        const initialData = {};
+        const initialSettings = { 
+          pricePerTon: 500,
+          dropThreshold: 1, 
+          dropSurcharge: 200,
+        };
+
+        // --- 輔助函式 ---
+
+        // [修正] 使用本地時間格式化日期，避免時區轉換導致日期退回一天
+        const getDateKey = (date) => {
+          if (!date) return '';
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+
+        const calculateEntryCost = (entry, settings) => {
+          const weight = parseFloat(entry.weight) || 0;
+          const drops = parseInt(entry.dropLocations) || 1;
+          const weightCost = weight * settings.pricePerTon;
+          const extraDrops = Math.max(0, drops - settings.dropThreshold);
+          const surchargeCost = extraDrops * settings.dropSurcharge;
+          return Math.round(weightCost + surchargeCost);
+        };
+
+        const App = () => {
+          const [view, setView] = useState('loading');
+          const [currentDate, setCurrentDate] = useState(new Date());
+          
+          // 核心資料 State
+          const [googleUrl, setGoogleUrl] = useState('');
+          const [data, setData] = useState(initialData);
+          const [settings, setSettings] = useState(initialSettings);
+          
+          // UI States
+          const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+          const [isSearchOpen, setIsSearchOpen] = useState(false);
+          const [isDownloadOpen, setIsDownloadOpen] = useState(false);
+          const [syncStatus, setSyncStatus] = useState('idle');
+          const [loginError, setLoginError] = useState('');
+
+          // 初始化
+          useEffect(() => {
+            const savedUrl = localStorage.getItem(STORAGE_URL_KEY);
+            const savedCache = localStorage.getItem(STORAGE_CACHE_KEY);
+
+            if (savedCache) {
+              try {
+                const parsed = JSON.parse(savedCache);
+                if (parsed.data) setData(parsed.data);
+                if (parsed.settings) setSettings({ ...initialSettings, ...parsed.settings });
+              } catch (e) {
+                console.error("Failed to parse cache", e);
+              }
+            }
+
+            if (savedUrl) {
+              setGoogleUrl(savedUrl);
+              fetchFromGoogle(savedUrl, true); 
+            } else {
+              setView('login');
+            }
+          }, []);
+
+          // Google Sync
+          const fetchFromGoogle = async (url, isAutoLogin = false) => {
+            if (!url) return;
+            setSyncStatus('syncing');
+            setLoginError('');
+            
+            try {
+              const response = await fetch(url);
+              const cloudPayload = await response.json();
+              
+              if (cloudPayload && !cloudPayload.status) { 
+                 const newData = cloudPayload.data || {};
+                 const newSettings = cloudPayload.settings || {};
+                 setData(newData);
+                 setSettings({ ...initialSettings, ...newSettings });
+                 localStorage.setItem(STORAGE_URL_KEY, url);
+                 localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify({ data: newData, settings: newSettings }));
+                 setSyncStatus('success');
+                 setView('calendar');
+                 setTimeout(() => setSyncStatus('idle'), 2000);
+              } else if (cloudPayload.status === 'error') {
+                 throw new Error('Script Error');
+              }
+            } catch (error) {
+              console.error("Sync Error:", error);
+              setSyncStatus('error');
+              if (!isAutoLogin) {
+                setLoginError('連線失敗，請檢查網址是否正確');
+              } else {
+                setView('calendar'); 
+              }
+            }
+          };
+
+          const saveDataAndSettings = async (newData, newSettings) => {
+            setData(newData);
+            setSettings(newSettings);
+            localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify({ data: newData, settings: newSettings }));
+
+            if (googleUrl) {
+              setSyncStatus('syncing');
+              try {
+                // 使用 fetch API 呼叫 Google Script
+                await fetch(googleUrl, {
+                  method: 'POST',
+                  mode: 'no-cors', 
+                  headers: { 'Content-Type': 'text/plain' },
+                  body: JSON.stringify({ data: newData, settings: newSettings })
+                });
+                setSyncStatus('success');
+                setTimeout(() => setSyncStatus('idle'), 2000);
+              } catch (error) {
+                console.error("Save Error:", error);
+                setSyncStatus('error');
+              }
+            }
+          };
+
+          const handleLogout = () => {
+            if(window.confirm('確定要登出嗎？這會清除此裝置的自動登入紀錄。')) {
+              localStorage.removeItem(STORAGE_URL_KEY);
+              localStorage.removeItem(STORAGE_CACHE_KEY);
+              setGoogleUrl('');
+              setData(initialData);
+              setSettings(initialSettings);
+              setView('login');
+            }
+          };
+
+          const renderView = () => {
+            switch (view) {
+              case 'loading': 
+                return <div className="h-screen flex items-center justify-center bg-white"><Icon name="Loader2" className="animate-spin text-blue-600" size={40}/></div>;
+              case 'login': 
+                return <LoginView onLogin={(url) => { setGoogleUrl(url); fetchFromGoogle(url); }} error={loginError} loading={syncStatus === 'syncing'} />;
+              case 'calendar':
+                return (
+                  <CalendarView 
+                    currentDate={currentDate} 
+                    setCurrentDate={setCurrentDate}
+                    data={data}
+                    syncStatus={syncStatus}
+                    onSelectDate={(date) => { setCurrentDate(date); setView('detail'); }}
+                    openSettings={() => setIsSettingsOpen(true)}
+                    openSearch={() => setIsSearchOpen(true)}
+                    openDownload={() => setIsDownloadOpen(true)}
+                    onLogout={handleLogout}
+                    onRefresh={() => fetchFromGoogle(googleUrl)}
+                  />
+                );
+              case 'detail':
+                return (
+                  <DetailView 
+                    date={currentDate}
+                    data={data[getDateKey(currentDate)] || { entries: [] }}
+                    onUpdate={(dayUpdates) => {
+                        const dateKey = getDateKey(currentDate);
+                        const currentDayData = data[dateKey] || { entries: [] };
+                        const newData = { ...data, [dateKey]: { ...currentDayData, ...dayUpdates } };
+                        saveDataAndSettings(newData, settings);
+                    }}
+                    onBack={() => setView('calendar')}
+                    onChangeDate={(days) => {
+                        const d = new Date(currentDate); d.setDate(d.getDate()+days); setCurrentDate(d);
+                    }}
+                    settings={settings}
+                  />
+                );
+              default: return null;
+            }
+          };
+
+          return (
+            <div className="min-h-screen bg-gray-100 font-sans text-gray-900 relative overflow-hidden shadow-2xl border-x border-gray-200">
+              {renderView()}
+              {isSettingsOpen && <SettingsModal settings={settings} onSave={(newSettings) => { saveDataAndSettings(data, newSettings); setIsSettingsOpen(false); }} onClose={() => setIsSettingsOpen(false)} />}
+              {isSearchOpen && <SearchModal data={data} onClose={() => setIsSearchOpen(false)} onSelectResult={(d) => { setCurrentDate(new Date(d)); setIsSearchOpen(false); setView('detail'); }} />}
+              {isDownloadOpen && <DownloadModal data={data} settings={settings} onClose={() => setIsDownloadOpen(false)} />}
+            </div>
+          );
+        }
+
+        // --- Components ---
+
+        function LoginView({ onLogin, error, loading }) {
+          const [inputUrl, setInputUrl] = useState('');
+          const handleSubmit = (e) => { e.preventDefault(); if (inputUrl.trim()) onLogin(inputUrl.trim()); };
+
+          return (
+            <div className="h-screen flex flex-col items-center justify-center bg-white p-8">
+              <div className="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center mb-8 shadow-xl shadow-blue-200"><Icon name="Truck" className="text-white w-12 h-12" /></div>
+              <h1 className="text-2xl font-bold mb-2 text-gray-800">貨車記帳助手</h1>
+              <p className="text-gray-500 mb-8 text-center text-sm">請輸入您的 Google Script URL <br/>以連結雲端資料庫</p>
+              <form onSubmit={handleSubmit} className="w-full max-w-xs space-y-4">
+                <div className="relative">
+                   <Icon name="LinkIcon" className="absolute left-3 top-3.5 text-gray-400" size={18}/>
+                   <input type="url" required value={inputUrl} onChange={(e) => setInputUrl(e.target.value)} placeholder="https://script.google.com/..." className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"/>
+                </div>
+                {error && <div className="text-red-500 text-xs text-center bg-red-50 p-2 rounded-lg flex items-center justify-center gap-1"><Icon name="AlertCircle" size={12}/> {error}</div>}
+                <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-200 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed">{loading ? <Icon name="Loader2" className="animate-spin" size={20}/> : '連線並登入'}</button>
+              </form>
+            </div>
+          );
+        }
+
+        function CalendarView({ currentDate, setCurrentDate, data, onSelectDate, openSettings, openSearch, openDownload, onLogout, syncStatus, onRefresh }) {
+          const year = currentDate.getFullYear();
+          const month = currentDate.getMonth();
+          const daysInMonth = new Date(year, month + 1, 0).getDate();
+          const firstDayOfMonth = new Date(year, month, 1).getDay(); 
+
+          const days = [];
+          for (let i = 0; i < firstDayOfMonth; i++) days.push(null);
+          for (let i = 1; i <= daysInMonth; i++) days.push(i);
+
+          const changeMonth = (delta) => setCurrentDate(new Date(year, month + delta, 1));
+          
+          const getTotalTons = (day) => {
+            if (!day) return 0;
+            const dateKey = getDateKey(new Date(year, month, day));
+            return (data[dateKey]?.entries || []).reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0);
+          };
+
+          return (
+            <div className="h-screen flex flex-col bg-white">
+              <div className="px-4 py-4 bg-white border-b border-gray-100 flex justify-between items-center sticky top-0 z-10">
+                <div className="flex items-center gap-2">
+                   <button onClick={onLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors"><Icon name="LogOut" size={20}/></button>
+                   <div>
+                     <h2 className="text-xl font-bold text-gray-800 leading-tight">{year}年 {month + 1}月</h2>
+                     <div className="flex items-center gap-1 text-[10px] font-medium h-4">
+                        {syncStatus === 'idle' && <span className="text-gray-400 flex items-center gap-1"><Icon name="CheckCircle" size={10}/> 雲端已同步</span>}
+                        {syncStatus === 'syncing' && <span className="text-blue-500 flex items-center gap-1"><Icon name="RefreshCw" size={10} className="animate-spin"/> 同步中...</span>}
+                        {syncStatus === 'error' && <span className="text-red-500 flex items-center gap-1"><Icon name="AlertCircle" size={10}/> 同步失敗</span>}
+                        {syncStatus === 'success' && <span className="text-green-500 flex items-center gap-1"><Icon name="CheckCircle" size={10}/> 儲存成功</span>}
+                     </div>
+                   </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={onRefresh} className="p-2 text-gray-400 hover:bg-gray-50 rounded-full"><Icon name="RefreshCw" size={18} /></button>
+                  <button onClick={() => changeMonth(-1)} className="p-2 bg-gray-100 rounded-full"><Icon name="ChevronLeft" size={20} /></button>
+                  <button onClick={() => changeMonth(1)} className="p-2 bg-gray-100 rounded-full"><Icon name="ChevronRight" size={20} /></button>
+                  <div className="w-px h-6 bg-gray-200 mx-1"></div>
+                  <button onClick={openDownload} className="p-2 text-green-600 bg-green-50 rounded-full hover:bg-green-100"><Icon name="Download" size={20} /></button>
+                  <button onClick={openSearch} className="p-2 text-blue-600 bg-blue-50 rounded-full hover:bg-blue-100"><Icon name="Search" size={20} /></button>
+                  <button onClick={openSettings} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><Icon name="Settings" size={20} /></button>
+                </div>
+              </div>
+              <div className="grid grid-cols-7 gap-1 px-2 py-2 mb-2">
+                {['日', '一', '二', '三', '四', '五', '六'].map(d => (
+                  <div key={d} className="text-center text-xs text-gray-400 font-medium">{d}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2 px-2 pb-20 overflow-y-auto">
+                {days.map((day, index) => {
+                  if (!day) return <div key={`empty-${index}`} className="aspect-square" />;
+                  const total = getTotalTons(day);
+                  const isToday = getDateKey(new Date()) === getDateKey(new Date(year, month, day));
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => onSelectDate(new Date(year, month, day))}
+                      className={`aspect-square rounded-xl flex flex-col items-center justify-start pt-2 relative transition-all ${isToday ? 'bg-blue-50 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100 border border-transparent'}`}
+                    >
+                      <span className={`text-sm font-semibold ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>{day}</span>
+                      {total > 0 && (
+                        <div className="mt-1">
+                          <span className="block text-xs font-bold text-green-600">{Math.round(total * 10) / 10}</span>
+                          <span className="text-[10px] text-gray-400">噸</span>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
+        function DetailView({ date, data, onUpdate, onBack, onChangeDate, settings }) {
+          const [showAddModal, setShowAddModal] = useState(false);
+          const [editingEntry, setEditingEntry] = useState(null);
+
+          const totalWeight = useMemo(() => data.entries.reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0), [data.entries]);
+          const totalDrops = useMemo(() => data.entries.reduce((acc, curr) => acc + (parseInt(curr.dropLocations) || 0), 0), [data.entries]);
+          const totalEarnings = useMemo(() => data.entries.reduce((acc, curr) => acc + calculateEntryCost(curr, settings), 0), [data.entries, settings]);
+          const formattedDate = `${date.getFullYear()} / ${date.getMonth() + 1} / ${date.getDate()}`;
+
+          const handleSaveEntry = (entry) => {
+            if (editingEntry) {
+              const newEntries = data.entries.map(e => e.id === editingEntry.id ? entry : e);
+              onUpdate({ entries: newEntries });
+            } else {
+              onUpdate({ entries: [...data.entries, { ...entry, id: Date.now().toString() }] });
+            }
+            setShowAddModal(false); setEditingEntry(null);
+          };
+
+          const handleDeleteEntry = (id) => {
+             if(window.confirm('確定刪除此筆紀錄？')) {
+                const newEntries = data.entries.filter(e => e.id !== id);
+                onUpdate({ entries: newEntries });
+             }
+          };
+
+          return (
+            <div className="h-screen flex flex-col bg-gray-100">
+              <div className="bg-blue-600 text-white pt-4 pb-4 px-4 shadow-md z-20">
+                <div className="flex justify-between items-center mt-2">
+                  <button onClick={onBack} className="flex items-center text-blue-100 hover:text-white"><Icon name="ChevronLeft" size={20} /> 返回</button>
+                  <div className="flex gap-4">
+                     <button onClick={() => onChangeDate(-1)} className="p-1 hover:bg-blue-700 rounded"><Icon name="ChevronLeft" size={24}/></button>
+                     <button onClick={() => onChangeDate(1)} className="p-1 hover:bg-blue-700 rounded"><Icon name="ChevronRight" size={24}/></button>
+                  </div>
+                </div>
+                <div className="mt-4 text-center">
+                    <h2 className="text-2xl font-bold">{formattedDate}</h2>
+                    <div className="text-blue-200 text-xs mt-1 flex justify-center gap-2">
+                      <span>${settings.pricePerTon}/噸</span>
+                      <span>•</span>
+                      <span>超{settings.dropThreshold}位+${settings.dropSurcharge}</span>
+                    </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 shadow-sm z-10 grid grid-cols-2 gap-4 border-b border-gray-200">
+                <div className="bg-blue-50 p-3 rounded-lg text-center">
+                   <div className="text-gray-500 text-xs mb-1 uppercase tracking-wide">總噸數</div>
+                   <div className="text-3xl font-bold text-blue-700">{Math.round(totalWeight * 100) / 100}</div>
+                   <div className="text-xs text-gray-500 mt-1">預估: <span className="font-bold">${totalEarnings.toLocaleString()}</span></div>
+                </div>
+                <div className="bg-orange-50 p-3 rounded-lg text-center relative">
+                   <div className="text-gray-500 text-xs mb-1 uppercase tracking-wide">總位數</div>
+                   <div className="text-3xl font-bold text-orange-700">{totalDrops}</div>
+                   <Icon name="MapPin" className="absolute top-2 right-2 w-4 h-4 text-orange-300" />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">
+                {data.entries.length === 0 ? (
+                  <div className="text-center text-gray-400 mt-10"><Icon name="Package" className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>無資料</p></div>
+                ) : (
+                  data.entries.map(entry => {
+                    const cost = calculateEntryCost(entry, settings);
+                    return (
+                    <div key={entry.id} onClick={() => { setEditingEntry(entry); setShowAddModal(true); }} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 active:scale-[0.98] transition-transform cursor-pointer relative group">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-gray-100 p-2 rounded-full"><Icon name="User" size={16} className="text-gray-600"/></div>
+                            <h3 className="font-bold text-lg text-gray-800">{entry.clientName}</h3>
+                        </div>
+                        <div className="text-right"><span className="text-2xl font-bold text-gray-800">{entry.weight}</span><span className="text-xs text-gray-500 ml-1">噸</span></div>
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">{entry.material}</span>
+                          {(entry.dropLocations > 0) && (
+                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${entry.dropLocations > settings.dropThreshold ? 'bg-red-50 text-red-600 font-bold' : 'bg-orange-50 text-orange-600'}`}>
+                                <Icon name="MapPin" size={10} /> {entry.dropLocations}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                           <div className="flex items-center gap-1 text-gray-400"><Icon name="Package" size={14} /><span>{entry.packages}</span></div>
+                           <div className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">${cost.toLocaleString()}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )})
+                )}
+              </div>
+
+              <button onClick={() => { setEditingEntry(null); setShowAddModal(true); }} className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg shadow-blue-600/40 hover:bg-blue-700 active:scale-90 transition-all z-30"><Icon name="Plus" size={28} /></button>
+
+              {showAddModal && <EntryModal initialValues={editingEntry} onClose={() => { setShowAddModal(false); setEditingEntry(null); }} onSave={handleSaveEntry} onDelete={editingEntry ? () => handleDeleteEntry(editingEntry.id) : null} />}
+            </div>
+          );
+        }
+
+        function EntryModal({ initialValues, onClose, onSave, onDelete }) {
+          const [form, setForm] = useState(initialValues || { clientName: '', material: '', packages: '', weight: '', dropLocations: '1' });
+          const handleSubmit = (e) => {
+            e.preventDefault();
+            onSave({ ...form, packages: parseFloat(form.packages) || 0, weight: parseFloat(form.weight) || 0, dropLocations: parseInt(form.dropLocations) || 1 });
+          };
+          return (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-fade-in">
+              <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+                <h3 className="text-xl font-bold mb-4 text-gray-800">{initialValues ? '編輯' : '新增'}</h3>
+                <form onSubmit={handleSubmit} className="space-y-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">客戶</label><input required className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none" value={form.clientName} onChange={e => setForm({...form, clientName: e.target.value})} placeholder="客戶名稱" autoFocus /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="block text-xs text-gray-500 mb-1">料名</label><input required className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none" value={form.material} onChange={e => setForm({...form, material: e.target.value})} /></div>
+                    <div><label className="block text-xs text-gray-500 mb-1">包數</label><input type="number" className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none" value={form.packages} onChange={e => setForm({...form, packages: e.target.value})} /></div>
+                  </div>
+                  <div>
+                      <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">下貨位數 <Icon name="MapPin" size={12}/></label>
+                      <div className="flex items-center gap-2">
+                         <button type="button" className="p-3 bg-gray-100 rounded-lg" onClick={() => setForm({...form, dropLocations: Math.max(1, (parseInt(form.dropLocations)||1) - 1)})}>-</button>
+                         <input type="number" className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none text-center" value={form.dropLocations} onChange={e => setForm({...form, dropLocations: e.target.value})} />
+                         <button type="button" className="p-3 bg-gray-100 rounded-lg" onClick={() => setForm({...form, dropLocations: (parseInt(form.dropLocations)||1) + 1})}>+</button>
+                      </div>
+                  </div>
+                  <div><label className="block text-xs text-gray-500 mb-1">重量 (噸)</label><input type="number" step="0.01" required className="w-full p-3 bg-blue-50 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-lg font-bold text-blue-800 text-center" value={form.weight} onChange={e => setForm({...form, weight: e.target.value})} /></div>
+                  <div className="pt-4 flex gap-3">
+                    {initialValues && <button type="button" onClick={() => { onDelete(); onClose(); }} className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-bold flex justify-center items-center"><Icon name="Trash2" size={18} /></button>}
+                    <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 font-bold">取消</button>
+                    <button type="submit" className="flex-[2] py-3 rounded-xl bg-blue-600 text-white font-bold shadow-lg shadow-blue-200 flex justify-center items-center gap-2"><Icon name="Save" size={18} /> 儲存</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          );
+        }
+
+        function SearchModal({ data, onClose, onSelectResult }) {
+          const [searchTerm, setSearchTerm] = useState('');
+          const results = useMemo(() => {
+            if (!searchTerm.trim()) return [];
+            const term = searchTerm.toLowerCase();
+            const allResults = [];
+            Object.keys(data).forEach(dateKey => {
+              data[dateKey].entries?.forEach(entry => {
+                if (entry.clientName.toLowerCase().includes(term)) allResults.push({ ...entry, date: dateKey });
+              });
+            });
+            return allResults.sort((a, b) => new Date(b.date) - new Date(a.date));
+          }, [data, searchTerm]);
+
+          return (
+            <div className="fixed inset-0 bg-white z-50 flex flex-col animate-fade-in">
+               <div className="px-4 py-4 border-b border-gray-100 flex items-center gap-3 bg-white">
+                  <div className="flex-1 relative"><Icon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" /><input autoFocus className="w-full bg-gray-100 rounded-xl py-3 pl-10 pr-4 outline-none text-gray-800" placeholder="搜尋客戶..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                  <button onClick={onClose} className="text-blue-600 font-bold">取消</button>
+               </div>
+               <div className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-3">
+                  {results.map(item => (
+                       <div key={`${item.date}-${item.id}`} onClick={() => onSelectResult(item.date)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 active:scale-95 transition-transform">
+                          <div className="flex justify-between items-start mb-1"><div className="text-xs text-gray-400 mb-1">{item.date}</div><div className="font-bold text-blue-600">{item.weight} 噸</div></div>
+                          <div className="flex justify-between items-center"><h3 className="font-bold text-gray-800">{item.clientName}</h3><div className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">{item.material}</div></div>
+                       </div>
+                  ))}
+               </div>
+            </div>
+          );
+        }
+
+        function DownloadModal({ data, settings, onClose }) {
+          const today = getDateKey(new Date());
+          const [startDate, setStartDate] = useState(today.substring(0, 8) + '01');
+          const [endDate, setEndDate] = useState(today);
+
+          const exportToCSV = () => {
+            const headers = ['日期', '客戶名稱', '料名', '包數', '下貨位數', '重量(噸)', '運費(含加價)'];
+            const rows = [headers];
+            
+            const sortedKeys = Object.keys(data).sort();
+            
+            sortedKeys.forEach(dateKey => {
+              if (dateKey >= startDate && dateKey <= endDate && data[dateKey].entries?.length > 0) {
+                  let dayW = 0, dayD = 0, dayM = 0;
+                  data[dateKey].entries.forEach(entry => {
+                     const cost = calculateEntryCost(entry, settings);
+                     dayW += parseFloat(entry.weight) || 0; dayD += parseInt(entry.dropLocations) || 1; dayM += cost;
+                     rows.push([dateKey, entry.clientName, entry.material, entry.packages, entry.dropLocations||1, entry.weight, cost]);
+                  });
+                  rows.push([dateKey, '--- 當日總計 ---', '', '', `總位: ${dayD}`, `總重: ${Math.round(dayW*100)/100}`, `總金: ${dayM}`]);
+                  rows.push([]); 
+              }
+            });
+            const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
+            const url = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+            const link = document.createElement("a"); link.href = url; link.download = `貨車記帳_${startDate}_${endDate}.csv`; document.body.appendChild(link); link.click(); document.body.removeChild(link); onClose();
+          };
+
+          return (
+            <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-xl">
+                <div className="flex items-center gap-2 mb-4 text-gray-800"><Icon name="Download" className="w-5 h-5 text-green-600" /><h3 className="font-bold text-lg">匯出報表</h3></div>
+                <div className="space-y-4 mb-6">
+                  <div><label className="block text-xs text-gray-500 mb-1">開始</label><input type="date" className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-green-500 outline-none" value={startDate} onChange={(e) => setStartDate(e.target.value)}/></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">結束</label><input type="date" className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-green-500 outline-none" value={endDate} onChange={(e) => setEndDate(e.target.value)}/></div>
+                </div>
+                <div className="flex gap-3"><button onClick={onClose} className="flex-1 py-2 rounded-lg text-gray-500 hover:bg-gray-50">取消</button><button onClick={exportToCSV} className="flex-1 py-2 rounded-lg bg-green-600 text-white font-bold">下載</button></div>
+              </div>
+            </div>
+          );
+        }
+
+        function SettingsModal({ settings, onSave, onClose }) {
+          const [localSettings, setLocalSettings] = useState(settings);
+          const handleChange = (key, val) => setLocalSettings({ ...localSettings, [key]: val });
+
+          return (
+            <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center p-6">
+              <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-xl">
+                <div className="flex items-center gap-2 mb-4 text-gray-800"><Icon name="Settings" className="w-5 h-5" /><h3 className="font-bold text-lg">設定</h3></div>
+                
+                <div className="space-y-4 mb-6">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">每噸運費 ($)</label>
+                        <input type="number" className="w-full p-3 bg-gray-50 rounded-lg border font-bold text-blue-600 outline-none" value={localSettings.pricePerTon} onChange={(e) => handleChange('pricePerTon', parseFloat(e.target.value))} />
+                    </div>
+                    
+                    <div className="pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-1 mb-2"><Icon name="DollarSign" size={14} className="text-orange-500"/><span className="text-sm font-bold text-gray-700">加價設定</span></div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div><label className="block text-[10px] text-gray-500 mb-1">超過幾位?</label><input type="number" className="w-full p-2 bg-orange-50 rounded-lg border border-orange-100 text-center" value={localSettings.dropThreshold} onChange={(e) => handleChange('dropThreshold', parseFloat(e.target.value))} /></div>
+                            <div><label className="block text-[10px] text-gray-500 mb-1">每位加多少?</label><input type="number" className="w-full p-2 bg-orange-50 rounded-lg border border-orange-100 text-center" value={localSettings.dropSurcharge} onChange={(e) => handleChange('dropSurcharge', parseFloat(e.target.value))} /></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-3"><button onClick={onClose} className="flex-1 py-2 rounded-lg text-gray-500 hover:bg-gray-50">取消</button><button onClick={() => onSave(localSettings)} className="flex-1 py-2 rounded-lg bg-blue-600 text-white font-bold">儲存</button></div>
+              </div>
+            </div>
+          );
+        }
+
+        // 渲染應用程式
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+    </script>
+</body>
+</html>
