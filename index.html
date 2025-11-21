@@ -26,6 +26,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // Lucide Icons (以單一元件形式定義)
         const { useState, useEffect, useMemo } = React;
 
         // 定義 Lucide Icons (使用 SVG 確保不用額外安裝套件)
@@ -69,7 +70,7 @@
 
         // --- 輔助函式 ---
 
-        // 使用本地時間格式化日期
+        // [修正] 使用本地時間格式化日期，避免時區轉換導致日期退回一天
         const getDateKey = (date) => {
           if (!date) return '';
           const year = date.getFullYear();
@@ -78,7 +79,6 @@
           return `${year}-${month}-${day}`;
         };
 
-        // 計算單筆金額（含位數加價）
         const calculateEntryCost = (entry, settings) => {
           const weight = parseFloat(entry.weight) || 0;
           const drops = parseInt(entry.dropLocations) || 1;
@@ -169,6 +169,7 @@
             if (googleUrl) {
               setSyncStatus('syncing');
               try {
+                // 使用 fetch API 呼叫 Google Script
                 await fetch(googleUrl, {
                   method: 'POST',
                   mode: 'no-cors', 
@@ -207,7 +208,6 @@
                     currentDate={currentDate} 
                     setCurrentDate={setCurrentDate}
                     data={data}
-                    settings={settings}
                     syncStatus={syncStatus}
                     onSelectDate={(date) => { setCurrentDate(date); setView('detail'); }}
                     openSettings={() => setIsSettingsOpen(true)}
@@ -272,20 +272,7 @@
           );
         }
 
-        // CalendarView：月曆畫面（已加入總金額顯示）
-        function CalendarView({ 
-          currentDate, 
-          setCurrentDate, 
-          data, 
-          settings,
-          onSelectDate, 
-          openSettings, 
-          openSearch, 
-          openDownload, 
-          onLogout, 
-          syncStatus, 
-          onRefresh 
-        }) {
+        function CalendarView({ currentDate, setCurrentDate, data, onSelectDate, openSettings, openSearch, openDownload, onLogout, syncStatus, onRefresh }) {
           const year = currentDate.getFullYear();
           const month = currentDate.getMonth();
           const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -300,16 +287,7 @@
           const getTotalTons = (day) => {
             if (!day) return 0;
             const dateKey = getDateKey(new Date(year, month, day));
-            return (data[dateKey]?.entries || [])
-              .reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0);
-          };
-
-          // 新增：取得當天總金額（含位數加價）
-          const getTotalAmount = (day) => {
-            if (!day) return 0;
-            const dateKey = getDateKey(new Date(year, month, day));
-            return (data[dateKey]?.entries || [])
-              .reduce((acc, curr) => acc + calculateEntryCost(curr, settings), 0);
+            return (data[dateKey]?.entries || []).reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0);
           };
 
           return (
@@ -345,38 +323,19 @@
               <div className="grid grid-cols-7 gap-2 px-2 pb-20 overflow-y-auto">
                 {days.map((day, index) => {
                   if (!day) return <div key={`empty-${index}`} className="aspect-square" />;
-
-                  const totalTons   = getTotalTons(day);
-                  const totalAmount = getTotalAmount(day);
+                  const total = getTotalTons(day);
                   const isToday = getDateKey(new Date()) === getDateKey(new Date(year, month, day));
-
                   return (
                     <button
                       key={day}
                       onClick={() => onSelectDate(new Date(year, month, day))}
-                      className={`aspect-square rounded-xl flex flex-col items-center justify-start pt-2 relative transition-all ${
-                        isToday 
-                          ? 'bg-blue-50 border-2 border-blue-500' 
-                          : 'bg-gray-50 hover:bg-gray-100 border border-transparent'
-                      }`}
+                      className={`aspect-square rounded-xl flex flex-col items-center justify-start pt-2 relative transition-all ${isToday ? 'bg-blue-50 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100 border border-transparent'}`}
                     >
-                      <span className={`text-sm font-semibold ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>
-                        {day}
-                      </span>
-
-                      {(totalTons > 0 || totalAmount > 0) && (
-                        <div className="mt-1 flex flex-col items-center leading-tight">
-                          {totalTons > 0 && (
-                            <span className="block text-xs font-bold text-green-600">
-                              {Math.round(totalTons * 10) / 10}
-                              <span className="text-[10px] text-gray-400 ml-0.5">噸</span>
-                            </span>
-                          )}
-                          {totalAmount > 0 && (
-                            <span className="block text-[10px] font-semibold text-amber-600">
-                              ${totalAmount.toLocaleString()}
-                            </span>
-                          )}
+                      <span className={`text-sm font-semibold ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>{day}</span>
+                      {total > 0 && (
+                        <div className="mt-1">
+                          <span className="block text-xs font-bold text-green-600">{Math.round(total * 10) / 10}</span>
+                          <span className="text-[10px] text-gray-400">噸</span>
                         </div>
                       )}
                     </button>
@@ -571,9 +530,7 @@
                   let dayW = 0, dayD = 0, dayM = 0;
                   data[dateKey].entries.forEach(entry => {
                      const cost = calculateEntryCost(entry, settings);
-                     dayW += parseFloat(entry.weight) || 0; 
-                     dayD += parseInt(entry.dropLocations) || 1; 
-                     dayM += cost;
+                     dayW += parseFloat(entry.weight) || 0; dayD += parseInt(entry.dropLocations) || 1; dayM += cost;
                      rows.push([dateKey, entry.clientName, entry.material, entry.packages, entry.dropLocations||1, entry.weight, cost]);
                   });
                   rows.push([dateKey, '--- 當日總計 ---', '', '', `總位: ${dayD}`, `總重: ${Math.round(dayW*100)/100}`, `總金: ${dayM}`]);
@@ -582,13 +539,7 @@
             });
             const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
             const url = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
-            const link = document.createElement("a"); 
-            link.href = url; 
-            link.download = `貨車記帳_${startDate}_${endDate}.csv`; 
-            document.body.appendChild(link); 
-            link.click(); 
-            document.body.removeChild(link); 
-            onClose();
+            const link = document.createElement("a"); link.href = url; link.download = `貨車記帳_${startDate}_${endDate}.csv`; document.body.appendChild(link); link.click(); document.body.removeChild(link); onClose();
           };
 
           return (
@@ -612,8 +563,7 @@
           return (
             <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center p-6">
               <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-xl">
-                <div className="flex items-center gap-2 mb-4 text-gray-8
-00"><Icon name="Settings" className="w-5 h-5" /><h3 className="font-bold text-lg">設定</h3></div>
+                <div className="flex items-center gap-2 mb-4 text-gray-800"><Icon name="Settings" className="w-5 h-5" /><h3 className="font-bold text-lg">設定</h3></div>
                 
                 <div className="space-y-4 mb-6">
                     <div>
@@ -638,6 +588,7 @@
 
         // 渲染應用程式
         ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
     </script>
 </body>
 </html>
