@@ -390,11 +390,15 @@
         function DetailView({ date, data, onUpdate, onBack, onChangeDate, settings }) {
           const [showAddModal, setShowAddModal] = useState(false);
           const [editingEntry, setEditingEntry] = useState(null);
-
-          const totalWeight = useMemo(() => data.entries.reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0), [data.entries]);
-          const totalDrops = useMemo(() => data.entries.reduce((acc, curr) => acc + (parseInt(curr.dropLocations) || 0), 0), [data.entries]);
-          const totalEarnings = useMemo(() => data.entries.reduce((acc, curr) => acc + calculateEntryCost(curr, settings), 0), [data.entries, settings]);
+        
+          // ⭐ 改成一次用 getDaySummary 算出「總噸數 / 總位數 / 總金額」
+          const { totalWeight, totalDrops, totalEarnings } = useMemo(
+            () => getDaySummary(data.entries, settings),
+            [data.entries, settings]
+          );
+        
           const formattedDate = `${date.getFullYear()} / ${date.getMonth() + 1} / ${date.getDate()}`;
+
 
           const handleSaveEntry = (entry) => {
             if (editingEntry) {
@@ -641,3 +645,4 @@
     </script>
 </body>
 </html>
+
