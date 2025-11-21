@@ -20,16 +20,22 @@
             margin: 0 auto; 
             box-shadow: 0 0 20px rgba(0,0,0,0.1);
         }
+        /* 讀取動畫 */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin { animation: spin 1s linear infinite; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // Lucide Icons (以單一元件形式定義)
+        // Lucide Icons (使用 SVG 確保不用額外安裝套件)
         const { useState, useEffect, useMemo } = React;
 
-        // 定義 Lucide Icons (使用 SVG 確保不用額外安裝套件)
+        // 定義 Lucide Icons (將常用的圖示直接內嵌 SVG)
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
                 ChevronLeft: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>,
@@ -70,7 +76,7 @@
 
         // --- 輔助函式 ---
 
-        // [修正] 使用本地時間格式化日期，避免時區轉換導致日期退回一天
+        // 格式化日期為 YYYY-MM-DD
         const getDateKey = (date) => {
           if (!date) return '';
           const year = date.getFullYear();
@@ -79,14 +85,43 @@
           return `${year}-${month}-${day}`;
         };
 
-        const calculateEntryCost = (entry, settings) => {
+        // [新邏輯] 計算單筆運單的基價 (僅按重量計算)
+        const calculateEntryBaseCost = (entry, settings) => {
           const weight = parseFloat(entry.weight) || 0;
-          const drops = parseInt(entry.dropLocations) || 1;
-          const weightCost = weight * settings.pricePerTon;
-          const extraDrops = Math.max(0, drops - settings.dropThreshold);
-          const surchargeCost = extraDrops * settings.dropSurcharge;
-          return Math.round(weightCost + surchargeCost);
+          return Math.round(weight * settings.pricePerTon);
         };
+
+        // [新邏輯] 計算當日的總收入 (包含每日總位數加價)
+        const calculateDayTotal = (dayData, settings) => {
+            const entries = dayData.entries || [];
+            
+            // 1. 計算所有運單的基價總和 (重量費用)
+            const totalWeightCost = entries.reduce((acc, curr) => 
+                acc + calculateEntryBaseCost(curr, settings), 0);
+
+            // 2. 計算當日總下貨位數
+            const totalDrops = entries.reduce((acc, curr) => 
+                acc + (parseInt(curr.dropLocations) || 1), 0); 
+
+            // 3. 計算每日加價 (總位數超過門檻才加價)
+            const extraDrops = Math.max(0, totalDrops - settings.dropThreshold);
+            const surchargeCost = Math.round(extraDrops * settings.dropSurcharge);
+
+            // 4. 計算總收入
+            const totalEarnings = totalWeightCost + surchargeCost;
+            
+            // 5. 計算總重量
+            const totalWeight = entries.reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0);
+
+            return { 
+                totalWeight,
+                totalDrops,
+                totalBaseCost: totalWeightCost, // 基價總和
+                surchargeCost: surchargeCost,   // 當日加價總額
+                totalEarnings              // 總收入
+            };
+        };
+
 
         const App = () => {
           const [view, setView] = useState('loading');
@@ -104,7 +139,7 @@
           const [syncStatus, setSyncStatus] = useState('idle');
           const [loginError, setLoginError] = useState('');
 
-          // 初始化
+          // 初始化：從 localStorage 載入 URL 和 快取資料
           useEffect(() => {
             const savedUrl = localStorage.getItem(STORAGE_URL_KEY);
             const savedCache = localStorage.getItem(STORAGE_CACHE_KEY);
@@ -127,7 +162,7 @@
             }
           }, []);
 
-          // Google Sync
+          // Google Sync: 從雲端腳本載入資料
           const fetchFromGoogle = async (url, isAutoLogin = false) => {
             if (!url) return;
             setSyncStatus('syncing');
@@ -161,6 +196,7 @@
             }
           };
 
+          // 儲存資料到 localStorage 和 雲端腳本
           const saveDataAndSettings = async (newData, newSettings) => {
             setData(newData);
             setSettings(newSettings);
@@ -208,6 +244,7 @@
                     currentDate={currentDate} 
                     setCurrentDate={setCurrentDate}
                     data={data}
+                    settings={settings} // 傳遞設定以計算總收入
                     syncStatus={syncStatus}
                     onSelectDate={(date) => { setCurrentDate(date); setView('detail'); }}
                     openSettings={() => setIsSettingsOpen(true)}
@@ -272,7 +309,7 @@
           );
         }
 
-        function CalendarView({ currentDate, setCurrentDate, data, onSelectDate, openSettings, openSearch, openDownload, onLogout, syncStatus, onRefresh }) {
+        function CalendarView({ currentDate, setCurrentDate, data, settings, onSelectDate, openSettings, openSearch, openDownload, onLogout, syncStatus, onRefresh }) {
           const year = currentDate.getFullYear();
           const month = currentDate.getMonth();
           const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -284,10 +321,11 @@
 
           const changeMonth = (delta) => setCurrentDate(new Date(year, month + delta, 1));
           
-          const getTotalTons = (day) => {
-            if (!day) return 0;
+          // [新] 取得每日總結資訊
+          const getDaySummary = (day) => {
+            if (!day) return { totalWeight: 0, totalEarnings: 0, totalDrops: 0 };
             const dateKey = getDateKey(new Date(year, month, day));
-            return (data[dateKey]?.entries || []).reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0);
+            return calculateDayTotal(data[dateKey] || {}, settings);
           };
 
           return (
@@ -323,7 +361,7 @@
               <div className="grid grid-cols-7 gap-2 px-2 pb-20 overflow-y-auto">
                 {days.map((day, index) => {
                   if (!day) return <div key={`empty-${index}`} className="aspect-square" />;
-                  const total = getTotalTons(day);
+                  const summary = getDaySummary(day);
                   const isToday = getDateKey(new Date()) === getDateKey(new Date(year, month, day));
                   return (
                     <button
@@ -332,10 +370,11 @@
                       className={`aspect-square rounded-xl flex flex-col items-center justify-start pt-2 relative transition-all ${isToday ? 'bg-blue-50 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100 border border-transparent'}`}
                     >
                       <span className={`text-sm font-semibold ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>{day}</span>
-                      {total > 0 && (
-                        <div className="mt-1">
-                          <span className="block text-xs font-bold text-green-600">{Math.round(total * 10) / 10}</span>
-                          <span className="text-[10px] text-gray-400">噸</span>
+                      {/* [新] 顯示總收入和總噸數 */}
+                      {summary.totalEarnings > 0 && (
+                        <div className="mt-1 flex flex-col items-center">
+                            <span className="block text-xs font-bold text-green-700">${summary.totalEarnings.toLocaleString()}</span>
+                            <span className="text-[10px] text-gray-400">{Math.round(summary.totalWeight * 10) / 10} 噸</span>
                         </div>
                       )}
                     </button>
@@ -350,9 +389,9 @@
           const [showAddModal, setShowAddModal] = useState(false);
           const [editingEntry, setEditingEntry] = useState(null);
 
-          const totalWeight = useMemo(() => data.entries.reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0), [data.entries]);
-          const totalDrops = useMemo(() => data.entries.reduce((acc, curr) => acc + (parseInt(curr.dropLocations) || 0), 0), [data.entries]);
-          const totalEarnings = useMemo(() => data.entries.reduce((acc, curr) => acc + calculateEntryCost(curr, settings), 0), [data.entries, settings]);
+          // [新] 使用 calculateDayTotal 取得當日總結
+          const daySummary = useMemo(() => calculateDayTotal(data, settings), [data, settings]);
+
           const formattedDate = `${date.getFullYear()} / ${date.getMonth() + 1} / ${date.getDate()}`;
 
           const handleSaveEntry = (entry) => {
@@ -389,19 +428,30 @@
                       <span>•</span>
                       <span>超{settings.dropThreshold}位+${settings.dropSurcharge}</span>
                     </div>
+                    {/* 顯示加價資訊 */}
+                    {daySummary.surchargeCost > 0 && (
+                         <div className="text-lg font-bold text-red-300 mt-2 flex items-center justify-center gap-1">
+                            <Icon name="AlertCircle" size={16}/> 總位數加價: ${daySummary.surchargeCost.toLocaleString()}
+                         </div>
+                    )}
                 </div>
               </div>
 
-              <div className="bg-white p-4 shadow-sm z-10 grid grid-cols-2 gap-4 border-b border-gray-200">
-                <div className="bg-blue-50 p-3 rounded-lg text-center">
-                   <div className="text-gray-500 text-xs mb-1 uppercase tracking-wide">總噸數</div>
-                   <div className="text-3xl font-bold text-blue-700">{Math.round(totalWeight * 100) / 100}</div>
-                   <div className="text-xs text-gray-500 mt-1">預估: <span className="font-bold">${totalEarnings.toLocaleString()}</span></div>
+              <div className="bg-white p-4 shadow-sm z-10 grid grid-cols-3 gap-3 border-b border-gray-200">
+                <div className="bg-blue-50 p-2 rounded-lg text-center">
+                   <div className="text-gray-500 text-[10px] mb-0.5 uppercase tracking-wide">總噸數</div>
+                   <div className="text-2xl font-bold text-blue-700">{Math.round(daySummary.totalWeight * 100) / 100}</div>
+                   <div className="text-xs text-gray-500 mt-0.5">基價: <span className="font-bold">${daySummary.totalBaseCost.toLocaleString()}</span></div>
                 </div>
-                <div className="bg-orange-50 p-3 rounded-lg text-center relative">
-                   <div className="text-gray-500 text-xs mb-1 uppercase tracking-wide">總位數</div>
-                   <div className="text-3xl font-bold text-orange-700">{totalDrops}</div>
-                   <Icon name="MapPin" className="absolute top-2 right-2 w-4 h-4 text-orange-300" />
+                <div className="bg-green-50 p-2 rounded-lg text-center">
+                   <div className="text-gray-500 text-[10px] mb-0.5 uppercase tracking-wide">總收入</div>
+                   <div className="text-2xl font-bold text-green-700">{daySummary.totalEarnings.toLocaleString()}</div>
+                   <div className="text-xs text-gray-500 mt-0.5">加價: <span className="font-bold">${daySummary.surchargeCost.toLocaleString()}</span></div>
+                </div>
+                <div className="bg-orange-50 p-2 rounded-lg text-center relative">
+                   <div className="text-gray-500 text-[10px] mb-0.5 uppercase tracking-wide">總位數</div>
+                   <div className="text-2xl font-bold text-orange-700">{daySummary.totalDrops}</div>
+                   <div className="text-xs text-gray-500 mt-0.5">門檻: <span className="font-bold">{settings.dropThreshold}</span></div>
                 </div>
               </div>
 
@@ -410,7 +460,8 @@
                   <div className="text-center text-gray-400 mt-10"><Icon name="Package" className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>無資料</p></div>
                 ) : (
                   data.entries.map(entry => {
-                    const cost = calculateEntryCost(entry, settings);
+                    // [新] 這裡只顯示單筆的基價
+                    const baseCost = calculateEntryBaseCost(entry, settings);
                     return (
                     <div key={entry.id} onClick={() => { setEditingEntry(entry); setShowAddModal(true); }} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 active:scale-[0.98] transition-transform cursor-pointer relative group">
                       <div className="flex justify-between items-start mb-2">
@@ -424,15 +475,13 @@
                         <div className="flex items-center gap-3">
                           <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">{entry.material}</span>
                           {(entry.dropLocations > 0) && (
-                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${entry.dropLocations > settings.dropThreshold ? 'bg-red-50 text-red-600 font-bold' : 'bg-orange-50 text-orange-600'}`}>
+                            <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-orange-50 text-orange-600`}>
                                 <Icon name="MapPin" size={10} /> {entry.dropLocations}
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
-                           <div className="flex items-center gap-1 text-gray-400"><Icon name="Package" size={14} /><span>{entry.packages}</span></div>
-                           <div className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">${cost.toLocaleString()}</div>
-                        </div>
+                        {/* 這裡顯示基價 */}
+                        <div className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">${baseCost.toLocaleString()} (基價)</div>
                       </div>
                     </div>
                   )})
@@ -520,21 +569,36 @@
           const [endDate, setEndDate] = useState(today);
 
           const exportToCSV = () => {
-            const headers = ['日期', '客戶名稱', '料名', '包數', '下貨位數', '重量(噸)', '運費(含加價)'];
+            // [新] 新增欄位：基價 和 當日加價
+            const headers = ['日期', '客戶名稱', '料名', '包數', '下貨位數', '重量(噸)', '基價($)', '當日加價($)', '總收入($)'];
             const rows = [headers];
             
             const sortedKeys = Object.keys(data).sort();
             
             sortedKeys.forEach(dateKey => {
               if (dateKey >= startDate && dateKey <= endDate && data[dateKey].entries?.length > 0) {
-                  let dayW = 0, dayD = 0, dayM = 0;
+                  
+                  const daySummary = calculateDayTotal(data[dateKey] || {}, settings);
+
                   data[dateKey].entries.forEach(entry => {
-                     const cost = calculateEntryCost(entry, settings);
-                     dayW += parseFloat(entry.weight) || 0; dayD += parseInt(entry.dropLocations) || 1; dayM += cost;
-                     rows.push([dateKey, entry.clientName, entry.material, entry.packages, entry.dropLocations||1, entry.weight, cost]);
+                     const baseCost = calculateEntryBaseCost(entry, settings);
+                     // 單筆運單：只記錄基價
+                     rows.push([dateKey, entry.clientName, entry.material, entry.packages, entry.dropLocations||1, entry.weight, baseCost, '0', baseCost]);
                   });
-                  rows.push([dateKey, '--- 當日總計 ---', '', '', `總位: ${dayD}`, `總重: ${Math.round(dayW*100)/100}`, `總金: ${dayM}`]);
-                  rows.push([]); 
+
+                  // 每日總結：將加價總額列在最後一筆運單之後
+                  rows.push([
+                      dateKey, 
+                      '--- 當日總結 ---', 
+                      '', 
+                      '', 
+                      `總位: ${daySummary.totalDrops}`, 
+                      `總重: ${Math.round(daySummary.totalWeight*100)/100}`, 
+                      `總基價: ${daySummary.totalBaseCost}`,
+                      daySummary.surchargeCost,
+                      daySummary.totalEarnings
+                  ]);
+                  rows.push([]); // 空行分隔
               }
             });
             const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
@@ -558,7 +622,7 @@
 
         function SettingsModal({ settings, onSave, onClose }) {
           const [localSettings, setLocalSettings] = useState(settings);
-          const handleChange = (key, val) => setLocalSettings({ ...localSettings, [key]: val });
+          const handleChange = (key, val) => setLocalSettings({ ...localSettings, [key]: parseFloat(val) || 0 }); // 確保是數字
 
           return (
             <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center p-6">
@@ -568,14 +632,14 @@
                 <div className="space-y-4 mb-6">
                     <div>
                         <label className="block text-xs font-medium text-gray-500 mb-1">每噸運費 ($)</label>
-                        <input type="number" className="w-full p-3 bg-gray-50 rounded-lg border font-bold text-blue-600 outline-none" value={localSettings.pricePerTon} onChange={(e) => handleChange('pricePerTon', parseFloat(e.target.value))} />
+                        <input type="number" className="w-full p-3 bg-gray-50 rounded-lg border font-bold text-blue-600 outline-none" value={localSettings.pricePerTon} onChange={(e) => handleChange('pricePerTon', e.target.value)} />
                     </div>
                     
                     <div className="pt-2 border-t border-gray-100">
-                        <div className="flex items-center gap-1 mb-2"><Icon name="DollarSign" size={14} className="text-orange-500"/><span className="text-sm font-bold text-gray-700">加價設定</span></div>
+                        <div className="flex items-center gap-1 mb-2"><Icon name="DollarSign" size={14} className="text-orange-500"/><span className="text-sm font-bold text-gray-700">加價設定 (針對當日總位數)</span></div>
                         <div className="grid grid-cols-2 gap-3">
-                            <div><label className="block text-[10px] text-gray-500 mb-1">超過幾位?</label><input type="number" className="w-full p-2 bg-orange-50 rounded-lg border border-orange-100 text-center" value={localSettings.dropThreshold} onChange={(e) => handleChange('dropThreshold', parseFloat(e.target.value))} /></div>
-                            <div><label className="block text-[10px] text-gray-500 mb-1">每位加多少?</label><input type="number" className="w-full p-2 bg-orange-50 rounded-lg border border-orange-100 text-center" value={localSettings.dropSurcharge} onChange={(e) => handleChange('dropSurcharge', parseFloat(e.target.value))} /></div>
+                            <div><label className="block text-[10px] text-gray-500 mb-1">超過幾位才加價?</label><input type="number" className="w-full p-2 bg-orange-50 rounded-lg border border-orange-100 text-center" value={localSettings.dropThreshold} onChange={(e) => handleChange('dropThreshold', e.target.value)} /></div>
+                            <div><label className="block text-[10px] text-gray-500 mb-1">每多一位加多少?</label><input type="number" className="w-full p-2 bg-orange-50 rounded-lg border border-orange-100 text-center" value={localSettings.dropSurcharge} onChange={(e) => handleChange('dropSurcharge', e.target.value)} /></div>
                         </div>
                     </div>
                 </div>
