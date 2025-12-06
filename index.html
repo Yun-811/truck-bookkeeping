@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>貨車記帳助手 - 總噸數與顯示設定</title>
+    <title>貨車記帳助手 - 位數加價修正與介面優化</title>
     <!-- 引入 Tailwind CSS 確保樣式正確 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 React/ReactDOM/Babel (重要: 確保正確載入順序) -->
@@ -29,6 +29,19 @@
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
         }
+        /* 修正日期輸入框在某些瀏覽器上的預設高度 */
+        input[type="date"] {
+            min-height: 44px; /* 確保在 mobile 上有足夠點擊區域 */
+        }
+        /* 月曆日期數字和指標的微調，以保持緊湊 */
+        .calendar-day-content {
+            padding-top: 0.5rem; /* pt-2 */
+            min-height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
     </style>
 </head>
 <body>
@@ -43,7 +56,8 @@
                 ChevronLeft: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>,
                 ChevronRight: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
                 Plus: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>,
-                Settings: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.44a2 2 0 0 1-2 2h-.44a2 2 0 0 0-2 2v.44a2 2 0 0 1-2 2h-.44a2 2 0 0 0-2 2v.44a2 2 0 0 1 2 2h.44a2 2 0 0 0 2 2v.44a2 2 0 0 1 2 2h.44a2 2 0 0 0 2 2v-.44a2 2 0 0 1 2-2h.44a2 2 0 0 0 2-2v-.44a2 2 0 0 1 2-2h.44a2 2 0 0 0 2-2v-.44a2 2 0 0 1-2-2h-.44a2 2 0 0 0-2-2v-.44a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+                // 【修正 2】更換 Settings 圖示為 Sliders
+                Sliders: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>,
                 Truck: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 18H3c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v10h4c1.1 0 2 .9 2 2v1c0 1.1-.9 2-2 2h-1c-.5 0-1-.2-1.4-.6L17 19h-1.4c-.4.4-1.2.6-1.6.6H5c-.5 0-1-.2-1.4-.6L2.6 19H3c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h2zm11 2a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM7 20a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>,
                 Package: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.16"/><path d="m7.5 19.73 9-5.16"/><path d="M3.29 7.33l7.98-4.58a1 1 0 0 1 1.44 0l7.98 4.58a1 1 0 0 1 .5 1.05v7.24a1 1 0 0 1-.5 1.05l-7.98 4.58a1 1 0 0 1-1.44 0l-7.98-4.58a1 1 0 0 1-.5-1.05V8.38a1 1 0 0 1 .5-1.05z"/><path d="M12 22v-8"/><path d="M12 10V2"/></svg>,
                 MapPin: (props) => <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>,
@@ -96,68 +110,80 @@
         };
 
         /**
-         * 計算單筆交易的淨值 (收入為正，支出為負)
+         * 計算單筆交易的淨值 (收入為正，支出為負)。
+         * 注意：這裡不再計算單筆的加價費用，因為加價是依據**總位數**計算。
+         * 這裡只計算單筆的**基本**噸數運費。
          */
         const calculateEntryNetValue = (entry, settings) => {
             if (entry.type === 'fuel') {
+                // 支出為負值
                 return -(parseFloat(entry.amount) || 0);
             }
             if (entry.type === 'delivery') {
                 const weight = parseFloat(entry.weight) || 0;
-                const drops = parseInt(entry.dropLocations) || 0;
-                const weightCost = weight * settings.pricePerTon;
-                const extraDrops = Math.max(0, drops - settings.dropThreshold);
-                const surchargeCost = extraDrops * settings.dropSurcharge;
-                return Math.round(weightCost + surchargeCost);
+                // 單筆交易的收入只計算基本運費
+                const weightCost = weight * settings.pricePerTon; 
+                return Math.round(weightCost);
             }
             return 0;
         };
 
         /**
          * 計算單日的所有指標 (用於日曆畫面顯示)
+         * 此函數現在負責計算每日總位數、總收入（含總位數加價）和總支出。
          */
         const calculateDayMetrics = (dateKey, data, settings) => {
             const entries = data[dateKey]?.entries || [];
             
-            let totalIncome = 0;
+            let totalBasicIncome = 0; // 僅噸數產生的基本收入
             let totalExpense = 0;
             let totalWeight = 0;
+            let totalDrops = 0; // 每日總位數
 
             entries.forEach(entry => {
                 if (entry.type === 'delivery') {
                     const weight = parseFloat(entry.weight) || 0;
                     const drops = parseInt(entry.dropLocations) || 0;
-                    const weightCost = weight * settings.pricePerTon;
-                    const extraDrops = Math.max(0, drops - settings.dropThreshold);
-                    const surchargeCost = extraDrops * settings.dropSurcharge;
-                    const income = Math.round(weightCost + surchargeCost);
                     
-                    totalIncome += income;
+                    totalBasicIncome += (weight * settings.pricePerTon);
                     totalWeight += weight;
+                    totalDrops += drops; // 累計每日總位數
                 } else if (entry.type === 'fuel') {
                     totalExpense += (parseFloat(entry.amount) || 0);
                 }
             });
             
+            // 根據每日總位數計算加價費用
+            const extraDrops = Math.max(0, totalDrops - settings.dropThreshold);
+            const surchargeCost = extraDrops * settings.dropSurcharge;
+            
+            // 每日總收入 = 基本運費 + 總位數加價
+            const totalIncome = Math.round(totalBasicIncome + surchargeCost);
             const totalNetIncome = totalIncome - totalExpense;
 
             return {
                 dailyIncome: totalIncome,
                 dailyNetIncome: totalNetIncome,
                 dailyWeight: totalWeight,
+                dailyDrops: totalDrops, // 新增每日總位數，方便匯出時計算
+                surchargeCost: surchargeCost, // 新增總加價費用
                 hasData: entries.length > 0
             };
         };
 
-        // 計算送貨收入的細節（用於匯出）
+        /**
+         * 計算單筆送貨的細節。
+         * 此函數目前只用於顯示單筆交易的基本收入。
+         */
         const calculateDeliveryDetails = (entry, settings) => {
             const weight = parseFloat(entry.weight) || 0;
             const drops = parseInt(entry.dropLocations) || 0;
             const weightCost = Math.round(weight * settings.pricePerTon);
-            const extraDrops = Math.max(0, drops - settings.dropThreshold);
-            const surchargeCost = extraDrops * settings.dropSurcharge;
-            const totalIncome = weightCost + surchargeCost;
-            return { weightCost, extraDrops, surchargeCost, totalIncome };
+            
+            const surchargeCost = 0; 
+            const totalIncome = weightCost; // 單筆收入只包含基本運費
+            
+            return { weightCost, extraDrops: 0, surchargeCost, totalIncome };
         };
         
         // 可重複使用的 Checkbox 組件
@@ -171,16 +197,23 @@
             </label>
         );
         
-        // 日曆顯示指標組件
+        /**
+         * 月曆顯示指標組件：移除文字標籤，只顯示數值和單位。
+         */
         function DailyMetric({ value, label, unit, isPositive, color, precision = 0 }) {
             // 噸數為 0 時也允許顯示
-            if (value === 0 && label !== '噸數') return null; 
+            if (value === 0 && label === '噸數') {
+                value = 0;
+            } else if (value === 0) {
+                return null;
+            } 
 
             let valueText;
             if (precision > 0) {
-                valueText = parseFloat(value).toFixed(precision);
+                // 移除數字中的逗號（千位分隔符）
+                valueText = parseFloat(value).toFixed(precision).replace(/,/g, '');
             } else {
-                valueText = Math.abs(value).toLocaleString();
+                valueText = Math.abs(value).toLocaleString('en-US').replace(/,/g, ''); // 移除千位分隔符
             }
 
             const colorMap = {
@@ -193,12 +226,12 @@
 
             return (
                 <div className="flex flex-col items-center leading-tight">
-                    <span className={`block text-xs font-bold ${valueClass}`}>
+                    <span className={`block text-[11px] font-bold ${valueClass}`}>
                         {label !== '噸數' && (isPositive ? '' : '-')}
                         {valueText}
-                        <span className="text-[10px] ml-0.5 font-normal text-gray-500">{unit}</span>
+                        <span className="text-[9px] ml-0.5 font-normal text-gray-500">{unit}</span>
                     </span>
-                    <span className="text-[9px] text-gray-400 leading-tight">{label}</span>
+                    {/* 移除文字標籤 */}
                 </div>
             );
         }
@@ -408,6 +441,7 @@
                   <DetailView 
                     date={currentDate}
                     data={data[getDateKey(currentDate)] || { entries: [] }}
+                    dayMetrics={calculateDayMetrics(getDateKey(currentDate), data, settings)} // 傳入每日計算指標
                     onBack={() => setView('calendar')}
                     onChangeDate={(days) => {
                         const d = new Date(currentDate); d.setDate(d.getDate()+days); setCurrentDate(d);
@@ -435,7 +469,7 @@
               {renderView()}
               {isSettingsOpen && <SettingsModal settings={settings} onSave={(newSettings) => { saveDataAndSettings(data, newSettings); setIsSettingsOpen(false); }} onClose={() => setIsSettingsOpen(false)} />}
               {isSearchOpen && <SearchModal data={data} onClose={() => setIsSearchOpen(false)} onSelectResult={(d) => { setCurrentDate(new Date(d)); setIsSearchOpen(false); setView('detail'); }} />}
-              {isDownloadOpen && <DownloadModal data={data} settings={settings} onClose={() => setIsDownloadOpen(false)} calculateEntryNetValue={calculateEntryNetValue} calculateDeliveryDetails={calculateDeliveryDetails} />}
+              {isDownloadOpen && <DownloadModal data={data} settings={settings} onClose={() => setIsDownloadOpen(false)} calculateDeliveryDetails={calculateDeliveryDetails} calculateDayMetrics={calculateDayMetrics} />}
             </div>
           );
         }
@@ -570,7 +604,8 @@
                   <div className="w-px h-6 bg-gray-200 mx-1"></div>
                   <button onClick={openDownload} className="p-2 text-green-600 bg-green-50 rounded-full hover:bg-green-100"><Icon name="Download" size={20} /></button>
                   <button onClick={openSearch} className="p-2 text-blue-600 bg-blue-50 rounded-full hover:bg-blue-100"><Icon name="Search" size={20} /></button>
-                  <button onClick={openSettings} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><Icon name="Settings" size={20} /></button>
+                  {/* 【修正 2】使用新的 Sliders 圖示 */}
+                  <button onClick={openSettings} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><Icon name="Sliders" size={20} /></button>
                 </div>
               </div>
               <div className="grid grid-cols-7 gap-1 px-2 py-2 mb-2">
@@ -592,24 +627,29 @@
                     <button
                       key={day}
                       onClick={() => onSelectDate(new Date(year, month, day))}
-                      className={`aspect-square rounded-xl flex flex-col items-center justify-start pt-2 relative transition-all ${isToday ? 'bg-blue-50 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100 border border-transparent'}`}
+                      className={`aspect-square rounded-xl flex flex-col items-center justify-start relative transition-all ${isToday ? 'bg-blue-50 border-2 border-blue-500' : 'bg-gray-50 hover:bg-gray-100 border border-transparent'}`}
                     >
-                      <span className={`text-sm font-semibold ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>{day}</span>
-                      
-                      {/* 根據設定顯示動態指標 */}
-                      {hasData && (
-                          <div className="mt-1 space-y-[2px]">
-                              {settings.displayMetrics.showDailyIncome && (
-                                  <DailyMetric value={metrics.dailyIncome} label="收入" unit="$" isPositive={metrics.dailyIncome >= 0} color="green" />
-                              )}
-                              {settings.displayMetrics.showDailyNetIncome && (
-                                  <DailyMetric value={metrics.dailyNetIncome} label="淨收入" unit="$" isPositive={metrics.dailyNetIncome >= 0} color="blue" />
-                              )}
-                              {settings.displayMetrics.showDailyWeight && (
-                                  <DailyMetric value={metrics.dailyWeight} label="噸數" unit="噸" isPositive={true} color="orange" precision={2} />
-                              )}
-                          </div>
-                      )}
+                      <div className="calendar-day-content">
+                          <span className={`text-sm font-semibold ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>{day}</span>
+                          
+                          {/* 根據設定顯示動態指標 */}
+                          {hasData && (
+                              <div className="mt-1 space-y-[2px]">
+                                  {settings.displayMetrics.showDailyIncome && (
+                                      // label 保持原樣傳入，但在 DailyMetric 內部不顯示
+                                      <DailyMetric value={metrics.dailyIncome} label="收入" unit="$" isPositive={metrics.dailyIncome >= 0} color="green" />
+                                  )}
+                                  {settings.displayMetrics.showDailyNetIncome && (
+                                      // label 保持原樣傳入，但在 DailyMetric 內部不顯示
+                                      <DailyMetric value={metrics.dailyNetIncome} label="淨收入" unit="$" isPositive={metrics.dailyNetIncome >= 0} color="blue" />
+                                  )}
+                                  {settings.displayMetrics.showDailyWeight && (
+                                      // label 保持原樣傳入，但在 DailyMetric 內部不顯示
+                                      <DailyMetric value={metrics.dailyWeight} label="噸數" unit="噸" isPositive={true} color="orange" precision={2} />
+                                  )}
+                              </div>
+                          )}
+                      </div>
                     </button>
                   );
                 })}
@@ -619,26 +659,16 @@
         }
 
         // --- 每日畫面 (DetailView) ---
-        function DetailView({ date, data, onBack, onChangeDate, settings, calculateEntryNetValue, showTransactionModal, setShowTransactionModal, transactionType, setTransactionType, editingEntry, setEditingEntry, onSave, onDelete, showMenuModal, setShowMenuModal }) {
+        function DetailView({ date, data, onBack, onChangeDate, settings, dayMetrics, calculateEntryNetValue, showTransactionModal, setShowTransactionModal, transactionType, setTransactionType, editingEntry, setEditingEntry, onSave, onDelete, showMenuModal, setShowMenuModal }) {
           
           const formattedDate = `${date.getFullYear()} / ${date.getMonth() + 1} / ${date.getDate()}`;
 
-          // --- 核心計算 ---
-          const totalWeight = useMemo(() => data.entries.filter(e => e.type === 'delivery').reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0), [data.entries]).toFixed(2);
-          
-          const totalIncome = useMemo(() => 
-              data.entries
-                  .filter(e => e.type === 'delivery')
-                  .reduce((acc, curr) => acc + calculateEntryNetValue(curr, settings), 0), 
-              [data.entries, settings]);
-
-          const totalExpense = useMemo(() => 
-              data.entries
-                  .filter(e => e.type === 'fuel')
-                  .reduce((acc, curr) => acc + calculateEntryNetValue(curr, settings), 0),
-              [data.entries, settings]);
-
-          const totalNetEarnings = totalIncome + totalExpense;
+          // 使用 dayMetrics (已在 App 傳入，包含每日總位數加價)
+          const totalIncome = dayMetrics.dailyIncome;
+          const totalExpense = Math.abs(dayMetrics.dailyIncome - dayMetrics.dailyNetIncome);
+          const totalNetEarnings = dayMetrics.dailyNetIncome;
+          const totalWeight = dayMetrics.dailyWeight.toFixed(2); // 來自 dayMetrics
+          const totalDrops = dayMetrics.dailyDrops; // 來自 dayMetrics
 
           const handleOpenAddMenu = () => {
               setEditingEntry(null);
@@ -657,6 +687,10 @@
               setTransactionType(entry.type);
               setShowTransactionModal(true);
           };
+          
+          // 每日畫面總收入下方備註內容修正
+          const secondaryInfo = `${totalWeight} 噸 ( ${totalDrops} 位 )`;
+
 
           return (
             <div className="h-screen flex flex-col bg-gray-100">
@@ -679,9 +713,9 @@
               </div>
 
               <div className="bg-white p-4 shadow-sm z-10 grid grid-cols-3 gap-3 border-b border-gray-200">
-                {/* 總收入卡片增加總噸數顯示 (已保留) */}
-                <SummaryCard title="總收入" value={totalIncome} secondaryValue={`${totalWeight} 噸`} color="green" icon="DollarSign" secondaryIcon="Scale" />
-                <SummaryCard title="總支出" value={Math.abs(totalExpense)} color="red" icon="Fuel" />
+                {/* 總收入卡片使用修正後的 secondaryInfo */}
+                <SummaryCard title="總收入" value={totalIncome} secondaryValue={secondaryInfo} color="green" icon="DollarSign" secondaryIcon="Scale" />
+                <SummaryCard title="總支出" value={totalExpense} color="red" icon="Fuel" />
                 <SummaryCard title="淨收入" value={totalNetEarnings} color="blue" icon="Receipt" />
               </div>
 
@@ -690,12 +724,13 @@
                   <div className="text-center text-gray-400 mt-10"><Icon name="Package" className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>無資料</p></div>
                 ) : (
                   data.entries.sort((a,b) => b.id - a.id).map(entry => {
-                    const netValue = calculateEntryNetValue(entry, settings);
+                    // 這裡的 netValue 只會顯示單筆的基本噸數運費 (因為總位數加價是整日收入)
+                    const netValue = calculateEntryNetValue(entry, settings); 
                     return (
                         <EntryCard 
                             key={entry.id} 
                             entry={entry} 
-                            netValue={netValue} 
+                            netValue={netValue} // 顯示單筆基本收入或支出
                             settings={settings}
                             onEdit={handleEdit}
                         />
@@ -722,7 +757,9 @@
         
         // 總覽卡片元件
         function SummaryCard({ title, value, secondaryValue, color, icon, secondaryIcon }) {
-            const displayValue = value.toLocaleString();
+            // 總收入卡片金額不使用逗號
+            const displayValue = Math.abs(value).toLocaleString('en-US').replace(/,/g, '');
+            const isPositive = value >= 0;
             const colorMap = {
                 green: { bg: 'bg-green-50', text: 'text-green-700', icon: 'text-green-500' },
                 red: { bg: 'bg-red-50', text: 'text-red-700', icon: 'text-red-500' },
@@ -735,10 +772,12 @@
                     <div className="flex justify-center items-center text-xs mb-1 uppercase tracking-wide text-gray-500">
                         <Icon name={icon} size={14} className={`mr-1 ${styles.icon}`} /> {title}
                     </div>
-                    <div className="text-xl font-bold">{value < 0 ? `-${displayValue.substring(1)}` : displayValue}</div>
+                    {/* 收入和淨收入顯示正負號，支出顯示絕對值 */}
+                    <div className={`text-xl font-bold ${color === 'red' ? styles.text : isPositive ? styles.text : 'text-red-600'}`}>
+                        {color === 'red' ? displayValue : (isPositive ? '' : '-') + displayValue}
+                    </div>
                     {secondaryValue && (
                         <div className="text-xs text-gray-500 mt-1 flex items-center justify-center">
-                            <Icon name={secondaryIcon} size={12} className={`mr-1 ${styles.icon}`} />
                             {secondaryValue}
                         </div>
                     )}
@@ -749,9 +788,14 @@
         // 交易項目卡片元件
         function EntryCard({ entry, netValue, settings, onEdit }) {
             const isDelivery = entry.type === 'delivery';
-            const isExpense = netValue < 0;
+            const isExpense = entry.type === 'fuel';
+            
+            // netValue 這裡只代表：送貨的基本運費（正值） 或 油錢支出（負值）
             const valueClass = isExpense ? 'text-red-600 bg-red-50' : 'text-green-600 bg-green-50';
             
+            // 單筆金額不使用逗號
+            const displayNetValue = Math.abs(netValue).toLocaleString('en-US').replace(/,/g, '');
+
             if (isDelivery) {
                 const totalDrops = parseInt(entry.dropLocations) || 0;
                 return (
@@ -771,13 +815,15 @@
                         </div>
                         <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">
                             <div className="flex items-center gap-3">
-                                <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${totalDrops > settings.dropThreshold ? 'bg-red-100 text-red-600 font-bold' : 'bg-orange-100 text-orange-600'}`}>
+                                <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${totalDrops > settings.dropThreshold ? 'bg-orange-100 text-orange-600 font-bold' : 'bg-gray-100 text-gray-600'}`}>
                                     <Icon name="MapPin" size={10} /> {totalDrops} 位
+                                
                                 </span>
                                 {entry.remark && <span className="text-gray-500 text-xs truncate">備註: {entry.remark}</span>}
                             </div>
+                            {/* 這裡顯示的是單筆的基本運費 (netValue)，而非總收入，因總加價已歸納到總收入卡片 */}
                             <div className={`font-semibold px-3 py-1 rounded-full ${valueClass}`}>
-                                {netValue < 0 ? netValue.toLocaleString() : `+${netValue.toLocaleString()}`}
+                                {netValue > 0 ? `+${displayNetValue}` : '$-' }
                             </div>
                         </div>
                     </div>
@@ -793,7 +839,8 @@
                                 </div>
                             </div>
                             <div className="text-right">
-                                <div className={`font-semibold text-2xl ${valueClass}`}>{netValue.toLocaleString()}</div>
+                                {/* 支出顯示絕對值 */}
+                                <div className={`font-semibold text-2xl ${valueClass}`}>{displayNetValue}</div> 
                             </div>
                         </div>
                         <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded-lg"><Icon name="ScrollText" size={14} className="inline-block mr-1 text-gray-400"/> {entry.remark || '無備註'}</div>
@@ -978,11 +1025,11 @@
             return (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-                        <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2"><Icon name="Settings" size={20} className="text-gray-500"/> 應用程式設定</h3>
+                        <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2"><Icon name="Sliders" size={20} className="text-gray-500"/> 應用程式設定</h3>
                         
                         {/* 費用設定 */}
                         <div className="space-y-3 p-4 border rounded-xl bg-gray-50 mb-6">
-                           <h4 className="text-sm font-bold text-gray-700 mb-3">費用計算設定</h4>
+                           <h4 className="text-sm font-bold text-gray-700 mb-3">費用計算設定 (每日總位數計價)</h4>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">每噸單價 ($)</label>
                                 <input type="number" name="pricePerTon" step="1" required className="mt-1 w-full p-3 bg-white rounded-lg border focus:ring-blue-500 outline-none" value={form.pricePerTon} onChange={handleInputChange} />
@@ -991,7 +1038,7 @@
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">免加價位數</label>
                                     <input type="number" name="dropThreshold" step="1" min="0" required className="mt-1 w-full p-3 bg-white rounded-lg border focus:ring-blue-500 outline-none" value={form.dropThreshold} onChange={handleInputChange} />
-                                    <p className="text-xs text-gray-400 mt-1">超過此位數才會加價。</p>
+                                    <p className="text-xs text-gray-400 mt-1">每日總位數超過此位數才會加價。</p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">位數加價金額 ($)</label>
@@ -1002,24 +1049,24 @@
 
                         {/* 月曆顯示設定 (新功能) */}
                         <div className="space-y-3 p-4 border rounded-xl mb-6">
-                           <h4 className="text-sm font-bold text-gray-700 mb-3">月曆每日資訊顯示設定 (可多選)</h4>
+                           <h4 className="text-sm font-bold text-gray-700 mb-3">月曆每日資訊顯示設定 (僅顯示數值與單位)</h4>
                            <CheckboxItem 
-                                label="每日總收入 ($)" 
+                                label="總收入 ($)" 
                                 checked={form.displayMetrics.showDailyIncome} 
                                 onChange={() => handleMetricChange('showDailyIncome')}
-                                helpText="顯示當日送貨總收入 (綠色)。"
+                                helpText="在月曆上顯示當日送貨總收入 (綠色)。"
                            />
                            <CheckboxItem 
-                                label="每日淨收入 ($)" 
+                                label="淨收入 ($)" 
                                 checked={form.displayMetrics.showDailyNetIncome} 
                                 onChange={() => handleMetricChange('showDailyNetIncome')}
-                                helpText="顯示當日淨收入 (收入 - 支出, 藍色/紅色)。"
+                                helpText="在月曆上顯示當日淨收入 (收入 - 支出, 藍色/紅色)。"
                            />
                            <CheckboxItem 
-                                label="每日總噸數 (噸)" 
+                                label="總噸數 (噸)" 
                                 checked={form.displayMetrics.showDailyWeight} 
                                 onChange={() => handleMetricChange('showDailyWeight')}
-                                helpText="顯示當日送貨總重量 (橘色)。"
+                                helpText="在月曆上顯示當日送貨總重量 (橘色)。"
                            />
                         </div>
 
@@ -1037,20 +1084,24 @@
         function SearchModal({ data, onClose, onSelectResult }) {
             const [query, setQuery] = useState('');
             
-            const filteredDates = useMemo(() => {
+            // 搜尋邏輯優化：將匹配的單筆紀錄與其日期一起返回
+            const filteredResults = useMemo(() => {
                 if (!query) return [];
                 const searchLower = query.toLowerCase();
                 const results = [];
+                
                 Object.keys(data).sort().reverse().forEach(dateKey => {
                     const entries = data[dateKey].entries || [];
-                    const matches = entries.filter(entry => 
-                        (entry.clientName && entry.clientName.toLowerCase().includes(searchLower)) ||
-                        (entry.material && entry.material.toLowerCase().includes(searchLower)) ||
-                        (entry.remark && entry.remark.toLowerCase().includes(searchLower))
-                    );
-                    if (matches.length > 0) {
-                        results.push({ dateKey, matches });
-                    }
+                    
+                    entries.forEach(entry => {
+                        const isMatch = (entry.clientName && entry.clientName.toLowerCase().includes(searchLower)) ||
+                                        (entry.material && entry.material.toLowerCase().includes(searchLower)) ||
+                                        (entry.remark && entry.remark.toLowerCase().includes(searchLower));
+
+                        if (isMatch) {
+                            results.push({ dateKey, entry });
+                        }
+                    });
                 });
                 return results;
             }, [query, data]);
@@ -1070,17 +1121,43 @@
                     </div>
                     
                     <div className="flex-1 overflow-y-auto space-y-3 pb-10">
-                        {query && filteredDates.length > 0 ? (
-                            filteredDates.map(result => (
-                                <div key={result.dateKey} onClick={() => onSelectResult(result.dateKey)} className="bg-white p-4 rounded-xl shadow-md border border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors">
-                                    <h4 className="font-bold text-lg text-blue-600">{result.dateKey}</h4>
-                                    <ul className="text-sm text-gray-600 mt-1 space-y-1">
-                                        {result.matches.map((match, index) => (
-                                            <li key={index} className="flex items-center gap-1"><Icon name={match.type === 'delivery' ? 'Truck' : 'Fuel'} size={14} className="text-gray-400"/> {match.clientName || '支出'} - {match.material || match.remark.substring(0, 15)}...</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            ))
+                        {query && filteredResults.length > 0 ? (
+                            filteredResults.map((result, index) => {
+                                const { dateKey, entry } = result;
+                                const isDelivery = entry.type === 'delivery';
+
+                                return (
+                                    <div 
+                                        key={index} 
+                                        onClick={() => onSelectResult(dateKey)} 
+                                        className="bg-white p-4 rounded-xl shadow-md border border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                                    >
+                                        <h4 className="font-bold text-lg text-blue-600 mb-2 flex justify-between items-center">
+                                            {dateKey}
+                                            <Icon name={isDelivery ? 'Truck' : 'Fuel'} size={18} className={isDelivery ? 'text-green-500' : 'text-red-500'}/>
+                                        </h4>
+                                        
+                                        {isDelivery ? (
+                                            <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-sm text-gray-700">
+                                                <div className="truncate"><span className="text-gray-400 font-medium">客戶名:</span> {entry.clientName}</div>
+                                                <div className="truncate"><span className="text-gray-400 font-medium">料名:</span> {entry.material}</div>
+                                                <div className="truncate"><span className="text-gray-400 font-medium">包數:</span> {entry.packages} 包</div>
+                                                <div className="truncate"><span className="text-gray-400 font-medium">位數:</span> {entry.dropLocations} 位</div>
+                                                <div className="truncate col-span-2"><span className="text-gray-400 font-medium">重量:</span> {entry.weight} 噸</div>
+                                                {/* 【修正 1】增加備註欄位 */}
+                                                <div className="truncate col-span-2 text-xs pt-1 border-t border-gray-100 mt-1"><span className="text-gray-400 font-medium">備註:</span> {entry.remark || '無'}</div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-sm text-gray-700 space-y-1">
+                                                <div className="truncate"><span className="text-gray-400 font-medium">支出金額:</span> ${entry.amount.toLocaleString('en-US').replace(/,/g, '')}</div>
+                                                {/* 【修正 1】增加備註欄位 */}
+                                                <div className="text-xs text-gray-500 truncate pt-1 border-t border-gray-100"><span className="text-gray-400 font-medium">備註:</span> {entry.remark || '無'}</div>
+                                            </div>
+                                        )}
+
+                                    </div>
+                                );
+                            })
                         ) : query ? (
                             <p className="text-center text-gray-400 mt-10">找不到符合 "{query}" 的紀錄。</p>
                         ) : (
@@ -1091,8 +1168,10 @@
             );
         }
 
-        // --- 報表匯出 Modal (DownloadModal) ---
-        function DownloadModal({ data, settings, onClose, calculateEntryNetValue, calculateDeliveryDetails }) {
+        /**
+         * 報表匯出 Modal (DownloadModal)
+         */
+        function DownloadModal({ data, settings, onClose, calculateDeliveryDetails, calculateDayMetrics }) {
           const today = getDateKey(new Date());
           const [startDate, setStartDate] = useState(today.substring(0, 8) + '01');
           const [endDate, setEndDate] = useState(today);
@@ -1101,29 +1180,43 @@
             includeExpense: true,
             includeTotalIncome: true, // 總收入 (包含所選期間總收入)
             includeNetIncome: true,    // 淨收入 (包含所選期間的淨收入)
+            includeDailySurchargeAsSeparateEntry: true, // 新增選項：是否將每日總加價單獨列為一筆紀錄
           });
 
           const handleOptionChange = (key) => {
              setExportOptions(prev => ({ ...prev, [key]: !prev[key] }));
           };
+          
+          /**
+           * 輔助函式：將數值轉換為 CSV 格式（移除千位分隔符）
+           * @param {number|string} value - 原始數值
+           * @returns {string} - 不含逗號的字串
+           */
+          const formatForCsv = (value) => {
+              if (value === null || value === undefined || value === '') return '';
+              const num = parseFloat(value);
+              if (isNaN(num)) return String(value).replace(/,/g, ''); // 如果不是數字，移除可能存在的逗號
+              // 數字：使用 toString() 並移除逗號
+              return num.toString().replace(/,/g, '');
+          };
 
           const exportToCSV = () => {
-            const { includeSurcharge, includeExpense, includeTotalIncome, includeNetIncome } = exportOptions;
+            const { includeSurcharge, includeExpense, includeTotalIncome, includeNetIncome, includeDailySurchargeAsSeparateEntry } = exportOptions;
 
             // 1. 定義標頭
             let headers = ['日期', '類型', '客戶名稱', '料名', '包數', '重量(噸)', '下貨位數', '備註'];
             
             if (includeSurcharge) {
-                headers = [...headers, '基本運費', '位數加價', '總收入'];
+                headers = [...headers, '基本運費', '位數加價', '總收入(單筆)'];
             } else {
-                headers = [...headers, '總收入'];
+                headers = [...headers, '基本運費']; 
             }
             
             if (includeExpense) {
                 headers = [...headers, '支出金額'];
             }
             
-            headers = [...headers, '淨值'];
+            headers = [...headers, '淨值(單筆)'];
 
             const rows = [headers];
             
@@ -1135,23 +1228,36 @@
             sortedKeys.forEach(dateKey => {
               if (dateKey >= startDate && dateKey <= endDate && data[dateKey].entries?.length > 0) {
                   
-                  data[dateKey].entries.forEach(entry => {
-                     const netValue = calculateEntryNetValue(entry, settings);
-                     const row = [dateKey, entry.type === 'delivery' ? '送貨' : '油錢', entry.clientName || '', entry.material || '', entry.packages || '', entry.weight || '', entry.dropLocations || '', entry.remark || ''];
+                  const dayMetrics = calculateDayMetrics(dateKey, data, settings);
+                  
+                  let isSurchargeAddedToFirstDelivery = false; 
+
+                  data[dateKey].entries.forEach((entry, index) => {
+                     const netValue = calculateEntryNetValue(entry, settings); 
+                     const row = [dateKey, entry.type === 'delivery' ? '送貨' : '油錢', entry.clientName || '', entry.material || '', formatForCsv(entry.packages) || '', formatForCsv(entry.weight) || '', formatForCsv(entry.dropLocations) || '', entry.remark || ''];
 
                      if (entry.type === 'delivery') {
                          const details = calculateDeliveryDetails(entry, settings);
+                         let totalIncomeForEntry = details.totalIncome; 
                          
+                         if (!includeDailySurchargeAsSeparateEntry && !isSurchargeAddedToFirstDelivery) {
+                             totalIncomeForEntry += dayMetrics.surchargeCost;
+                             isSurchargeAddedToFirstDelivery = true;
+                         }
+
                          if (includeSurcharge) {
-                             row.push(details.weightCost); // 基本運費
-                             row.push(details.surchargeCost); // 位數加價
-                             row.push(details.totalIncome); // 總收入
+                             row.push(formatForCsv(details.weightCost)); // 基本運費
+                             // 只有在合併模式下，才在第一筆顯示總加價金額
+                             row.push(formatForCsv(!includeDailySurchargeAsSeparateEntry && index === 0 && dayMetrics.surchargeCost > 0 ? dayMetrics.surchargeCost : '')); // 位數加價
+                             row.push(formatForCsv(totalIncomeForEntry)); // 總收入 (單筆 - 含或不含總加價)
                          } else {
-                             row.push(details.totalIncome); // 總收入 (單一欄位)
+                             row.push(formatForCsv(totalIncomeForEntry)); // 基本運費 (單一欄位 - 含或不含總加價)
                          }
                          
                          row.push(includeExpense ? '' : null); // 支出金額 (Delivery 沒有)
-                         periodIncome += details.totalIncome;
+                         
+                         periodIncome += totalIncomeForEntry; // 累加實際收入
+                         row.push(formatForCsv(totalIncomeForEntry)); // 淨值 (單筆收入)
 
                      } else if (entry.type === 'fuel') {
                          const amount = Math.abs(netValue);
@@ -1162,32 +1268,74 @@
                              row.push(''); // 收入相關欄位空著 (單一欄位)
                          }
                          
-                         row.push(includeExpense ? amount : null); // 支出金額
+                         row.push(includeExpense ? formatForCsv(amount) : null); // 支出金額
                          periodExpense += amount;
+                         row.push(formatForCsv(netValue)); // 淨值 (負支出)
                      }
-                     
-                     row.push(netValue); // 淨值
                      
                      // 過濾掉因為選項被設為 false 而產生的 null
                      const finalRow = row.filter(val => val !== null);
                      rows.push(finalRow);
                   });
                   
+                  // 如果選擇單獨列出總加價，則在當日交易結束後新增一筆
+                  if (includeDailySurchargeAsSeparateEntry && dayMetrics.surchargeCost > 0) {
+                      const surchargeAmount = formatForCsv(dayMetrics.surchargeCost);
+                      const zero = formatForCsv(0);
+
+                      // 基礎欄位: 日期, 類型, 客戶名稱, 料名, 包數, 重量(噸), 下貨位數, 備註 (8 欄)
+                      let surchargeRow = [
+                          dateKey, 
+                          '總位數加價', 
+                          'N/A', 
+                          '', 
+                          '', 
+                          '', 
+                          formatForCsv(dayMetrics.dailyDrops), 
+                          `超 ${settings.dropThreshold} 位加價`
+                      ];
+                      
+                      if (includeSurcharge) {
+                          // [8] 基本運費 -> 0
+                          surchargeRow.push(zero); 
+                          // [9] 位數加價 -> 300
+                          surchargeRow.push(surchargeAmount); 
+                          // [10] 總收入(單筆)
+                          surchargeRow.push(surchargeAmount); 
+                      } else {
+                          // [8] 基本運費 (作為收入)
+                          surchargeRow.push(surchargeAmount); 
+                      }
+                      
+                      // 調整支出欄位
+                      if (includeExpense) {
+                           // [11] 支出金額 (為空)
+                           surchargeRow.push(''); 
+                      }
+                      
+                      // [12] 淨值
+                      surchargeRow.push(surchargeAmount); 
+                      
+                      rows.push(surchargeRow);
+                      periodIncome += dayMetrics.surchargeCost;
+                  }
               }
             });
             
-            // 3. 處理總結資料 (已保留)
+            // 3. 處理總結資料
             if (includeTotalIncome || includeNetIncome) {
                 rows.push([]); // 空行分隔
                 rows.push(['--- 期間總結 ---']);
                 
                 if (includeTotalIncome) {
-                    rows.push(['總收入 (送貨費)', periodIncome.toLocaleString()]);
-                    rows.push(['總支出 (油錢費)', periodExpense.toLocaleString()]);
+                    // 總結金額移除逗號
+                    rows.push(['總收入 (送貨費)', formatForCsv(periodIncome)]);
+                    rows.push(['總支出 (油錢費)', formatForCsv(periodExpense)]);
                 }
                 
                 if (includeNetIncome) {
-                    rows.push(['淨收入', (periodIncome - periodExpense).toLocaleString()]);
+                    // 總結金額移除逗號
+                    rows.push(['淨收入', formatForCsv(periodIncome - periodExpense)]);
                 }
             }
 
@@ -1215,15 +1363,24 @@
                 
                 <div className="space-y-4 mb-6 p-4 border rounded-xl bg-gray-50">
                    <h4 className="text-sm font-bold text-gray-700 mb-2">選擇期間</h4>
-                   <div className="grid grid-cols-2 gap-3">
-                     <div><label className="block text-xs text-gray-500 mb-1">開始</label><input type="date" className="w-full p-3 bg-white rounded-lg border focus:ring-green-500 outline-none" value={startDate} onChange={(e) => setStartDate(e.target.value)}/></div>
-                     <div><label className="block text-xs text-gray-500 mb-1">結束</label><input type="date" className="w-full p-3 bg-white rounded-lg border focus:ring-green-500 outline-none" value={endDate} onChange={(e) => setEndDate(e.target.value)}/></div>
+                   
+                   {/* 調整為上下堆疊 */}
+                   <div className="flex flex-col space-y-3">
+                     <div>
+                        <label className="block text-xs text-gray-500 mb-1">開始日期</label>
+                        <input type="date" className="w-full p-2 text-sm bg-white rounded-lg border focus:ring-green-500 outline-none" value={startDate} onChange={(e) => setStartDate(e.target.value)}/>
+                     </div>
+                     <div>
+                        <label className="block text-xs text-gray-500 mb-1">結束日期</label>
+                        <input type="date" className="w-full p-2 text-sm bg-white rounded-lg border focus:ring-green-500 outline-none" value={endDate} onChange={(e) => setEndDate(e.target.value)}/>
+                     </div>
                    </div>
                 </div>
                 
                 <div className="space-y-3 mb-6 p-4 border rounded-xl">
                    <h4 className="text-sm font-bold text-gray-700 mb-3">報表內容選項</h4>
-                   <CheckboxItem label="輸出位數加價細節" checked={exportOptions.includeSurcharge} onChange={() => handleOptionChange('includeSurcharge')} helpText="顯示基本運費和加價金額，否則只顯示總收入。" />
+                   <CheckboxItem label="輸出位數加價細節" checked={exportOptions.includeSurcharge} onChange={() => handleOptionChange('includeSurcharge')} helpText="細分基本運費和位數加價欄位。" />
+                   <CheckboxItem label="將總加價單獨列出" checked={exportOptions.includeDailySurchargeAsSeparateEntry} onChange={() => handleOptionChange('includeDailySurchargeAsSeparateEntry')} helpText="每日總加價會獨立成為一筆紀錄，否則會加到當天第一筆送貨收入中。" />
                    <CheckboxItem label="輸出支出金額" checked={exportOptions.includeExpense} onChange={() => handleOptionChange('includeExpense')} helpText="輸出油錢等支出紀錄。" />
                    <CheckboxItem label="期間總收入/總支出" checked={exportOptions.includeTotalIncome} onChange={() => handleOptionChange('includeTotalIncome')} helpText="在報表末尾彙總期間的總收入與總支出。" />
                    <CheckboxItem label="期間淨收入" checked={exportOptions.includeNetIncome} onChange={() => handleOptionChange('includeNetIncome')} helpText="在報表末尾彙總期間的淨收入 (總收入-總支出)。" />
@@ -1243,3 +1400,4 @@
     </script>
 </body>
 </html>
+
