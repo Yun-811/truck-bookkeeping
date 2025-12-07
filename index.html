@@ -160,10 +160,23 @@
                 }
                 
                 if (operation.type === 'create') {
-                    result.data[dateKey].entries.push({
-                        ...operation.data,
-                        id: operation.entryId
-                    });
+                    // 檢查是否已存在相同 ID 的 entry（防止重複）
+                    const existingIndex = result.data[dateKey].entries
+                        .findIndex(e => e.id === operation.entryId);
+                    if (existingIndex >= 0) {
+                        // 如果已存在，更新而不是添加（防止重複）
+                        console.warn(`⚠️ 發現重複的 entry ID: ${operation.entryId}，將更新而非添加`);
+                        result.data[dateKey].entries[existingIndex] = {
+                            ...result.data[dateKey].entries[existingIndex],
+                            ...operation.data,
+                            id: operation.entryId
+                        };
+                    } else {
+                        result.data[dateKey].entries.push({
+                            ...operation.data,
+                            id: operation.entryId
+                        });
+                    }
                 } else if (operation.type === 'update') {
                     const entryIndex = result.data[dateKey].entries
                         .findIndex(e => e.id === operation.entryId);
@@ -239,11 +252,22 @@
             return items.map(i => `${i.material} (${i.packages || 0}包)`).join(', ');
         };
 
-        const calculateEntryNetValue = (entry, settings) => {
+        // 計算單個 entry 的詳細信息（單筆記錄只顯示基本運費，不加價）
+        const calculateDeliveryDetails = (entry, settings, allEntries = []) => {
+            const weight = parseFloat(entry.weight) || 0;
+            const drops = parseInt(entry.dropLocations) || 0;
+            const weightCost = Math.round(weight * settings.pricePerTon);
+            
+            // 單筆記錄不計算加價，只返回基本運費
+            // 加價只在每日總計中按趟數加總計算
+            return { weightCost, extraDrops: 0, surchargeCost: 0, totalIncome: weightCost };
+        };
+        
+        const calculateEntryNetValue = (entry, settings, allEntries = []) => {
             if (entry.type === 'fuel') return -(parseFloat(entry.amount) || 0);
             if (entry.type === 'delivery') {
-                const weight = parseFloat(entry.weight) || 0;
-                return Math.round(weight * settings.pricePerTon);
+                const details = calculateDeliveryDetails(entry, settings, allEntries);
+                return details.totalIncome;
             }
             return 0;
         };
@@ -252,33 +276,45 @@
             const entries = data[dateKey]?.entries || [];
             let totalBasicIncome = 0; let totalExpense = 0;
             let totalWeight = 0; let totalDrops = 0; 
+            let surchargeCost = 0;
+
+            // 按趟數分組，將同趟數的位數加總後計算加價
+            const trips = {}; // { tripNumber: totalDrops }
 
             entries.forEach(entry => {
                 if (entry.type === 'delivery') {
                     const weight = parseFloat(entry.weight) || 0;
                     const drops = parseInt(entry.dropLocations) || 0;
+                    const tripNumber = parseInt(entry.tripNumber) || 1;
+                    
                     totalBasicIncome += (weight * settings.pricePerTon);
                     totalWeight += weight;
                     totalDrops += drops; 
+                    
+                    // 按趟數累加位數
+                    if (!trips[tripNumber]) {
+                        trips[tripNumber] = 0;
+                    }
+                    trips[tripNumber] += drops;
                 } else if (entry.type === 'fuel') {
                     totalExpense += (parseFloat(entry.amount) || 0);
                 }
             });
             
-            const extraDrops = Math.max(0, totalDrops - settings.dropThreshold);
-            const surchargeCost = extraDrops * settings.dropSurcharge;
+            // 對每個趟數，將位數加總後計算加價
+            Object.keys(trips).forEach(tripNumber => {
+                const tripTotalDrops = trips[tripNumber];
+                const extraDrops = Math.max(0, tripTotalDrops - settings.dropThreshold);
+                const tripSurcharge = extraDrops * settings.dropSurcharge;
+                surchargeCost += tripSurcharge;
+            });
+            
             const totalIncome = Math.round(totalBasicIncome + surchargeCost);
             const totalNetIncome = totalIncome - totalExpense;
 
             return { dailyIncome: totalIncome, dailyNetIncome: totalNetIncome, dailyWeight: totalWeight, dailyDrops: totalDrops, surchargeCost: surchargeCost, hasData: entries.length > 0 };
         };
 
-        const calculateDeliveryDetails = (entry, settings) => {
-            const weight = parseFloat(entry.weight) || 0;
-            const weightCost = Math.round(weight * settings.pricePerTon);
-            return { weightCost, extraDrops: 0, surchargeCost: 0, totalIncome: weightCost };
-        };
-        
         const CheckboxItem = ({ label, checked, onChange, helpText, disabled = false }) => (
             <label className={`flex items-start p-2 bg-gray-50 rounded-lg transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100'}`}>
                 <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} className="mt-1 mr-3 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 disabled:cursor-not-allowed" />
@@ -398,24 +434,12 @@
                   try {
                       return JSON.parse(text);
                   } catch(e) {
-                      // 如果解析失敗，可能是舊格式，嘗試兼容
-                      try {
-                          const oldData = JSON.parse(text);
-                          return {
-                              snapshot: {
-                                  data: oldData.data || {},
-                                  settings: oldData.settings || initialSettings
-                              },
-                              lastOperationId: '',
-                              lastSyncTime: Date.now()
-                          };
-                      } catch(e2) {
-                          return {
-                              snapshot: { data: {}, settings: initialSettings },
-                              lastOperationId: '',
-                              lastSyncTime: 0
-                          };
-                      }
+                      console.error('快照解析失敗:', e);
+                      return {
+                          snapshot: { data: {}, settings: initialSettings },
+                          lastOperationId: '',
+                          lastSyncTime: 0
+                      };
                   }
               } catch (error) {
                   console.error('讀取快照失敗:', error);
@@ -459,12 +483,26 @@
                   const snapshotResponse = await fetch(`${url}?action=snapshot`).catch(() => null);
                   
                   let snapshotData;
+                  let hasSnapshotSupport = false;
+                  
                   if (snapshotResponse && snapshotResponse.ok) {
                       const text = await snapshotResponse.text();
                       if (text && text.trim()) {
                           try {
-                              snapshotData = JSON.parse(text);
+                              const parsed = JSON.parse(text);
+                              // 檢查是否為有效的快照格式（必須有 snapshot 屬性）
+                              if (parsed && typeof parsed === 'object' && 'snapshot' in parsed) {
+                                  snapshotData = parsed;
+                                  hasSnapshotSupport = true;
+                              } else {
+                                  // 如果不是快照格式，不支援操作日誌
+                                  throw new Error('OPERATION_LOG_NOT_SUPPORTED');
+                              }
                           } catch(e) {
+                              // 如果解析失敗，可能是不支援操作日誌
+                              if (e.message === 'OPERATION_LOG_NOT_SUPPORTED') {
+                                  throw e;
+                              }
                               snapshotData = {
                                   snapshot: { data: {}, settings: initialSettings },
                                   lastOperationId: '',
@@ -472,75 +510,128 @@
                               };
                           }
                       } else {
-                          snapshotData = {
-                              snapshot: { data: {}, settings: initialSettings },
-                              lastOperationId: '',
-                              lastSyncTime: 0
-                          };
+                          // 空響應，可能是不支援操作日誌
+                          throw new Error('OPERATION_LOG_NOT_SUPPORTED');
                       }
                   } else {
-                      snapshotData = {
-                          snapshot: { data: {}, settings: initialSettings },
-                          lastOperationId: '',
-                          lastSyncTime: 0
-                      };
+                      // 無法讀取快照，可能是不支援操作日誌
+                      throw new Error('OPERATION_LOG_NOT_SUPPORTED');
                   }
                   
-                  // 關鍵修正：使用快照的 lastOperationId 來讀取操作日誌
-                  // 這樣可以確保不會重複讀取已包含在快照中的操作
-                  const snapshotLastOpId = snapshotData.lastOperationId || '';
+                  // 改進：使用 timestamp 而不是 operation_id 來過濾操作（更可靠）
+                  // 獲取快照的最後時間戳
+                  const snapshotLastTimestamp = snapshotData.lastSyncTime || 0;
                   
-                  // 優化 1: 增量讀取 - 使用快照的 lastOperationId 或 localStorage 的（取較新者）
-                  let lastOperationId = '';
+                  // 優化 1: 增量讀取 - 使用快照的 lastSyncTime 或 localStorage 的（取較新者）
+                  let lastTimestamp = 0;
                   if (useIncremental) {
-                      const localLastOpId = localStorage.getItem('last_operation_id') || '';
-                      // 使用較新的操作 ID（字符串比較，因為 ID 包含時間戳）
-                      lastOperationId = localLastOpId > snapshotLastOpId ? localLastOpId : snapshotLastOpId;
+                      const localLastTimestamp = parseInt(localStorage.getItem('last_timestamp') || '0');
+                      // 使用較新的時間戳
+                      lastTimestamp = Math.max(localLastTimestamp, snapshotLastTimestamp);
+                  } else {
+                      lastTimestamp = snapshotLastTimestamp;
                   }
                   
-                  // 讀取操作日誌（只讀取 lastOperationId 之後的操作）
+                  // 讀取操作日誌（只讀取 lastTimestamp 之後的操作）
                   let operations = [];
                   try {
-                      const operationsResponse = await fetch(`${url}?action=log&since=${encodeURIComponent(lastOperationId)}`).catch(() => null);
+                      // 使用 timestamp 參數（更可靠）
+                      console.log('📥 讀取操作日誌，sinceTimestamp:', lastTimestamp);
+                      const operationsResponse = await fetch(`${url}?action=log&sinceTimestamp=${lastTimestamp}`).catch(() => null);
                       if (operationsResponse && operationsResponse.ok) {
                           const text = await operationsResponse.text();
                           if (text && text.trim()) {
                               try {
-                                  operations = JSON.parse(text);
+                                  const parsed = JSON.parse(text);
+                                  // 檢查是否為陣列（操作日誌應該是陣列）
+                                  if (Array.isArray(parsed)) {
+                                      operations = parsed;
+                                      console.log('📋 讀取到操作數量:', operations.length);
+                                  } else {
+                                      // 如果不是陣列，可能是不支援操作日誌
+                                      console.warn('⚠️ 操作日誌不是陣列:', parsed);
+                                      operations = [];
+                                  }
                               } catch(e) {
+                                  console.error('操作日誌解析失敗:', e);
                                   operations = [];
                               }
+                          } else {
+                              console.log('操作日誌響應為空');
                           }
+                      } else {
+                          console.warn('操作日誌請求失敗:', operationsResponse?.status);
                       }
                   } catch (e) {
+                      console.error('讀取操作日誌異常:', e);
                       operations = [];
                   }
                   
+                  // 調試：檢查快照和操作
+                  console.log('🔍 合併前檢查:', {
+                      snapshotDataKeys: Object.keys(snapshotData.snapshot?.data || {}),
+                      snapshotDataCount: Object.keys(snapshotData.snapshot?.data || {}).length,
+                      operationsCount: operations.length,
+                      lastTimestamp: lastTimestamp,
+                      useIncremental: useIncremental,
+                      hasCurrentData: !!currentData && Object.keys(currentData).length > 0
+                  });
+                  
                   // 優化 3: 合併策略
                   let merged;
-                  if (useIncremental && lastOperationId && currentData && Object.keys(currentData).length > 0) {
+                  if (useIncremental && lastTimestamp > 0 && currentData && Object.keys(currentData).length > 0) {
                       // 增量更新：只應用新操作到現有數據
+                      console.log('📈 使用增量更新');
                       merged = applyOperations({ data: currentData, settings: currentSettings || initialSettings }, operations);
                   } else {
                       // 完整讀取：從快照開始合併所有操作
                       // 注意：這裡只合併快照之後的操作，不會重複
+                      console.log('📚 使用完整讀取（從快照開始）');
                       merged = applyOperations(snapshotData.snapshot, operations);
                   }
                   
-                  // 計算最終操作 ID
-                  const finalOperationId = operations.length > 0 
-                      ? operations[operations.length - 1].id 
-                      : snapshotLastOpId;
+                  // 去重：確保每個 dateKey 下的 entries 沒有重複的 ID
+                  if (merged.data) {
+                      Object.keys(merged.data).forEach(dateKey => {
+                          if (merged.data[dateKey] && merged.data[dateKey].entries) {
+                              const seen = new Set();
+                              const uniqueEntries = [];
+                              merged.data[dateKey].entries.forEach(entry => {
+                                  if (entry.id && !seen.has(entry.id)) {
+                                      seen.add(entry.id);
+                                      uniqueEntries.push(entry);
+                                  } else if (entry.id && seen.has(entry.id)) {
+                                      console.warn(`⚠️ 發現重複的 entry ID: ${entry.id} (dateKey: ${dateKey})，已移除重複項`);
+                                  }
+                              });
+                              merged.data[dateKey].entries = uniqueEntries;
+                          }
+                      });
+                  }
                   
-                  // 更新最後操作 ID（使用最終的操作 ID，確保不會遺漏）
+                  // 計算最終操作 ID 和 timestamp（用於追蹤）
+                  let finalOperationId = snapshotData.lastOperationId || '';
+                  let finalTimestamp = lastTimestamp;
+                  
+                  if (operations.length > 0) {
+                      const lastOp = operations[operations.length - 1];
+                      finalOperationId = lastOp.id || finalOperationId;
+                      finalTimestamp = Math.max(finalTimestamp, lastOp.timestamp || 0);
+                  }
+                  
+                  // 更新最後操作 ID 和 timestamp（確保不會遺漏）
                   if (finalOperationId) {
                       localStorage.setItem('last_operation_id', finalOperationId);
+                  }
+                  if (finalTimestamp > 0) {
+                      localStorage.setItem('last_timestamp', String(finalTimestamp));
                   }
                   
                   return {
                       data: merged.data,
                       settings: merged.settings,
-                      lastOperationId: finalOperationId
+                      lastOperationId: finalOperationId,
+                      lastTimestamp: finalTimestamp
                   };
               } catch (error) {
                   console.error('載入數據失敗:', error);
@@ -556,8 +647,7 @@
                   
                   const response = await fetch(saveUrl);
                   if (!response.ok) {
-                      // 如果不支援操作日誌，回退到舊方式
-                      throw new Error('OPERATION_LOG_NOT_SUPPORTED');
+                      throw new Error(`保存操作失敗: ${response.status}`);
                   }
                   
                   const text = await response.text();
@@ -629,16 +719,20 @@
                   const success = await SyncManager.saveOperation(googleUrl, operation);
                   
                   if (success) {
-                      // 更新最後操作 ID
+                      // 更新最後操作 ID 和 timestamp
                       if (operation.id) {
                           localStorage.setItem('last_operation_id', operation.id);
+                      }
+                      if (operation.timestamp) {
+                          localStorage.setItem('last_timestamp', String(operation.timestamp));
                       }
                       
                       // 更新本地快取
                       localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify({
                           data: optimisticData.data,
                           settings: optimisticData.settings,
-                          lastOperationId: operation.id
+                          lastOperationId: operation.id,
+                          lastTimestamp: operation.timestamp
                       }));
                       
                       setSyncStatus('success');
@@ -675,114 +769,106 @@
                       console.error('回滾失敗:', rollbackError);
                   }
                   
-                  // 如果不支援操作日誌，回退到舊方式
-                  if (error.message === 'OPERATION_LOG_NOT_SUPPORTED') {
-                      console.log('Google Script 不支援操作日誌，使用舊方式');
-                      setSyncStatus('error');
-                      alert('您的 Google Script 尚未更新以支援新的同步機制。\n請參考說明文件更新 Google Script。\n\n暫時無法保存，請更新 Google Script 後重試。');
-                      return false;
-                  }
-                  
                   console.error('操作保存失敗:', error);
                   setSyncStatus('error');
                   throw error; // 重新拋出錯誤，讓調用者處理
               }
           };
 
-          // 保留舊的 performSafeUpdate 作為備用（向後兼容）
-          const performSafeUpdate = async (updateLogicFn, retryCount = 0) => {
-              if (!googleUrl) { 
-                  alert("未設定同步網址，無法儲存。"); 
-                  return false; 
-              }
-              
-              const MAX_RETRIES = 3;
-              setSyncStatus('syncing');
-              
+
+          // 手動觸發快照更新
+          const triggerSnapshotUpdate = async (url) => {
               try {
-                  const response = await fetch(googleUrl);
+                  console.log('開始更新快照...', url);
+                  const response = await fetch(`${url}?action=updateSnapshot`);
+                  console.log('快照更新響應狀態:', response.status, response.statusText);
+                  
                   if (!response.ok) {
-                      throw new Error(`網路錯誤: ${response.status}`);
-                  }
-                  const text = await response.text();
-                  let cloudPayload;
-                  try { 
-                      cloudPayload = JSON.parse(text); 
-                  } catch(e) { 
-                      throw new Error('雲端資料格式錯誤'); 
-                  }
-                  
-                  if (cloudPayload.status === 'error') {
-                      throw new Error(`伺服器錯誤: ${cloudPayload.error || '未知錯誤'}`);
-                  }
-                  
-                  const latestData = cloudPayload.data || {};
-                  const latestSettings = cloudPayload.settings || initialSettings;
-                  
-                  const { newData, newSettings } = updateLogicFn(latestData, latestSettings);
-                  
-                  const payload = JSON.stringify({ data: newData, settings: newSettings });
-                  
-                  // 嘗試使用 GET 參數
-                  try {
-                      const encodedPayload = encodeURIComponent(payload);
-                      if (encodedPayload.length < 1800) {
-                          const saveUrl = `${googleUrl}?action=save&data=${encodedPayload}`;
-                          const saveResponse = await fetch(saveUrl);
-                          if (saveResponse.ok) {
-                              const saveText = await saveResponse.text();
-                              const saveResult = JSON.parse(saveText);
-                              if (saveResult.status === 'error') {
-                                  throw new Error(saveResult.error || '保存失敗');
+                      const errorText = await response.text();
+                      console.error('❌ 快照更新失敗 - HTTP 錯誤:', response.status, errorText);
+                      try {
+                          const errorResult = JSON.parse(errorText);
+                          if (errorResult.error) {
+                              console.error('錯誤詳情:', errorResult.error);
+                              if (errorResult.stack) {
+                                  console.error('錯誤堆疊:', errorResult.stack);
                               }
-                              setData(newData);
-                              setSettings(newSettings);
-                              localStorage.setItem(STORAGE_CACHE_KEY, payload);
-                              setSyncStatus('success');
-                              setTimeout(() => setSyncStatus('idle'), 2000);
-                              return true;
                           }
+                      } catch (e) {
+                          // 無法解析錯誤響應
                       }
-                  } catch (getError) {
-                      // GET 失敗，使用 POST
+                      return false;
                   }
                   
-                  // 使用 POST（備用）
-                  await fetch(googleUrl, { 
-                      method: 'POST', 
-                      mode: 'no-cors', 
-                      headers: { 'Content-Type': 'text/plain' }, 
-                      body: payload 
-                  });
+                  const text = await response.text();
+                  console.log('快照更新響應內容:', text);
                   
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-                  setData(newData);
-                  setSettings(newSettings);
-                  localStorage.setItem(STORAGE_CACHE_KEY, payload);
-                  setSyncStatus('success');
-                  setTimeout(() => setSyncStatus('idle'), 2000);
-                  return true;
-                  
+                  try {
+                      const result = JSON.parse(text);
+                      if (result.success === true) {
+                          console.log('✅ 快照更新成功:', result.message || '');
+                          if (result.snapshotRows !== undefined) {
+                              console.log('快照記錄數:', result.snapshotRows);
+                          }
+                          if (result.isEmpty) {
+                              console.log('ℹ️ 快照為空（沒有數據）');
+                          }
+                          return true;
+                      } else {
+                          // 詳細顯示失敗原因
+                          console.error('❌ 快照更新失敗 - 響應表示失敗');
+                          const errorMsg = result.message || result.error || '未知錯誤';
+                          console.error('失敗原因:', errorMsg);
+                          
+                          if (result.warning) {
+                              console.warn('警告:', result.warning);
+                          }
+                          if (result.error) {
+                              console.error('錯誤詳情:', result.error);
+                          }
+                          if (result.stack) {
+                              console.error('錯誤堆疊:', result.stack);
+                          }
+                          
+                          // 顯示完整的響應以便調試
+                          console.error('完整響應:', JSON.stringify(result, null, 2));
+                          
+                          return false;
+                      }
+                  } catch (parseError) {
+                      console.error('❌ 快照更新響應解析失敗:', parseError);
+                      console.error('響應內容:', text);
+                      return false;
+                  }
               } catch (error) {
-                  console.error("Safe Save Error:", error);
-                  setSyncStatus('error');
-                  alert(`儲存失敗：${error.message}`);
+                  console.error('❌ 觸發快照更新失敗:', error);
+                  console.error('錯誤堆疊:', error.stack);
                   return false;
               }
           };
 
-          const fetchFromGoogle = async (url, isAutoLogin = false) => {
+          const fetchFromGoogle = async (url, isAutoLogin = false, forceUpdateSnapshot = false) => {
             if (!url) return;
             setSyncStatus('syncing'); 
             setLoginError('');
+            
+            // 每次開啟時自動更新快照（確保數據最新）
+            // 手動同步或自動登入時都會更新快照
+            if (forceUpdateSnapshot || isAutoLogin) {
+                await triggerSnapshotUpdate(url);
+            }
             
             try {
               // 優先使用操作日誌方式讀取（優化：並行讀取 + 增量讀取）
               try {
                   // 首次載入使用完整讀取，後續使用增量讀取
-                  const isFirstLoad = !localStorage.getItem('last_operation_id');
-                  // 傳入當前數據以支援增量讀取
-                  const merged = await SyncManager.loadAndMerge(url, !isFirstLoad, data, settings);
+                  const isFirstLoad = !localStorage.getItem('last_operation_id') && !localStorage.getItem('last_timestamp');
+                  // 如果是首次載入或當前數據為空，使用完整讀取（不傳入當前數據）
+                  // 只有在有現有數據時才使用增量讀取
+                  const hasExistingData = data && Object.keys(data).length > 0;
+                  const shouldUseIncremental = !isFirstLoad && hasExistingData;
+                  // 傳入當前數據以支援增量讀取（只有在有數據時才傳入）
+                  const merged = await SyncManager.loadAndMerge(url, shouldUseIncremental, shouldUseIncremental ? data : null, shouldUseIncremental ? settings : null);
                   
                   const mergedSettings = {
                       ...initialSettings,
@@ -793,51 +879,81 @@
                       }
                   };
                   
+                  // 調試：檢查合併後的數據
+                  const dataKeys = Object.keys(merged.data || {});
+                  console.log('📊 合併後的數據:', {
+                      dataKeys: dataKeys,
+                      dataCount: dataKeys.length,
+                      settings: mergedSettings,
+                      lastOperationId: merged.lastOperationId,
+                      lastTimestamp: merged.lastTimestamp
+                  });
+                  
+                  // 檢查日期鍵格式並修正
+                  if (merged.data && dataKeys.length > 0) {
+                      const normalizedData = {};
+                      let hasInvalidFormat = false;
+                      
+                      dataKeys.forEach(key => {
+                          // 檢查日期鍵格式是否正確（應該是 YYYY-MM-DD）
+                          if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+                              hasInvalidFormat = true;
+                              console.warn('⚠️ 發現無效的日期鍵格式:', key);
+                              
+                              // 嘗試解析並轉換為正確格式
+                              try {
+                                  const dateObj = new Date(key);
+                                  if (!isNaN(dateObj.getTime())) {
+                                      const normalizedKey = getDateKey(dateObj);
+                                      console.log('✅ 日期鍵已正規化:', key, '->', normalizedKey);
+                                      normalizedData[normalizedKey] = merged.data[key];
+                                  } else {
+                                      console.error('❌ 無法解析日期鍵:', key);
+                                      normalizedData[key] = merged.data[key]; // 保留原鍵
+                                  }
+                              } catch (e) {
+                                  console.error('❌ 日期鍵轉換失敗:', key, e);
+                                  normalizedData[key] = merged.data[key]; // 保留原鍵
+                              }
+                          } else {
+                              normalizedData[key] = merged.data[key];
+                          }
+                      });
+                      
+                      if (hasInvalidFormat) {
+                          console.log('🔧 修正後的數據鍵:', Object.keys(normalizedData));
+                          merged.data = normalizedData;
+                      }
+                  }
+                  
+                  // 檢查數據是否為空
+                  if (!merged.data || Object.keys(merged.data).length === 0) {
+                      console.warn('⚠️ 警告：合併後的數據為空');
+                      console.log('合併後的數據結構:', {
+                          dataKeys: Object.keys(merged.data || {}),
+                          settings: mergedSettings,
+                          lastOperationId: merged.lastOperationId,
+                          lastTimestamp: merged.lastTimestamp
+                      });
+                  }
+                  
                   setData(merged.data);
                   setSettings(mergedSettings);
                   localStorage.setItem(STORAGE_URL_KEY, url);
                   localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify({
                       data: merged.data,
                       settings: mergedSettings,
-                      lastOperationId: merged.lastOperationId
+                      lastOperationId: merged.lastOperationId,
+                      lastTimestamp: merged.lastTimestamp || 0
                   }));
                   
                   setSyncStatus('success');
                   setView('calendar');
                   setTimeout(() => setSyncStatus('idle'), 2000);
               } catch (opLogError) {
-                  // 如果操作日誌方式失敗，回退到舊方式（向後兼容）
-                  console.log('操作日誌讀取失敗，使用舊方式:', opLogError);
-                  
-                  const response = await fetch(url);
-                  if (!response.ok) {
-                      throw new Error(`網路錯誤: ${response.status}`);
-                  }
-                  const text = await response.text(); 
-                  let cloudPayload; 
-                  try { 
-                      cloudPayload = JSON.parse(text); 
-                  } catch (e) { 
-                      throw new Error('Script 執行錯誤或回傳格式錯誤。'); 
-                  }
-                  
-              if (cloudPayload && !cloudPayload.status) { 
-                     const newData = cloudPayload.data || {}; 
-                     const newSettings = cloudPayload.settings || {};
-                 const mergedSettings = { ...initialSettings, ...newSettings, displayMetrics: { ...initialSettings.displayMetrics, ...newSettings.displayMetrics } };
-                     setData(newData); 
-                     setSettings(mergedSettings);
-                     localStorage.setItem(STORAGE_URL_KEY, url); 
-                     localStorage.setItem(STORAGE_CACHE_KEY, JSON.stringify({ 
-                         data: newData, 
-                         settings: mergedSettings
-                     }));
-                     setSyncStatus('success'); 
-                     setView('calendar'); 
-                     setTimeout(() => setSyncStatus('idle'), 2000);
-                  } else if (cloudPayload.status === 'error') { 
-                      throw new Error(`腳本錯誤: ${cloudPayload.error}`); 
-                  }
+                  // 操作日誌方式失敗，直接拋出錯誤
+                  console.error('操作日誌讀取失敗:', opLogError);
+                  throw opLogError;
               }
             } catch (error) {
               setSyncStatus('error'); 
@@ -847,9 +963,39 @@
           };
 
           useEffect(() => {
-            const savedUrl = localStorage.getItem(STORAGE_URL_KEY); const savedCache = localStorage.getItem(STORAGE_CACHE_KEY);
-            if (savedCache) { try { const parsed = JSON.parse(savedCache); if (parsed.data) setData(parsed.data); if (parsed.settings) { setSettings({ ...initialSettings, ...parsed.settings, displayMetrics: { ...initialSettings.displayMetrics, ...parsed.settings.displayMetrics } }); } } catch (e) {} }
-            if (savedUrl) { setGoogleUrl(savedUrl); fetchFromGoogle(savedUrl, true); } else { setView('login'); }
+            const savedUrl = localStorage.getItem(STORAGE_URL_KEY); 
+            const savedCache = localStorage.getItem(STORAGE_CACHE_KEY);
+            
+            // 先載入緩存數據（如果有）
+            if (savedCache) { 
+                try { 
+                    const parsed = JSON.parse(savedCache); 
+                    if (parsed.data) {
+                        setData(parsed.data);
+                        console.log('已載入緩存數據，記錄數:', Object.keys(parsed.data).length);
+                    }
+                    if (parsed.settings) { 
+                        setSettings({ 
+                            ...initialSettings, 
+                            ...parsed.settings, 
+                            displayMetrics: { 
+                                ...initialSettings.displayMetrics, 
+                                ...parsed.settings.displayMetrics 
+                            } 
+                        }); 
+                    } 
+                } catch (e) {
+                    console.error('載入緩存失敗:', e);
+                } 
+            }
+            
+            // 然後嘗試從 Google 同步
+            if (savedUrl) { 
+                setGoogleUrl(savedUrl); 
+                fetchFromGoogle(savedUrl, true); 
+            } else { 
+                setView('login'); 
+            }
           }, []);
 
           const handleSaveTransaction = async (entry) => {
@@ -905,45 +1051,15 @@
                     }
                 }
             } catch (error) {
-                // 如果操作日誌失敗，回退到舊方式（向後兼容）
-                console.log('操作日誌保存失敗，使用舊方式:', error);
-                try {
-                    const success = await performSafeUpdate((latestCloudData, latestCloudSettings) => {
-                const currentDayData = latestCloudData[dateKey] || { entries: [] };
-                let newEntries;
-                        const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                        
-                        if (savedEditingEntry) { 
-                            newEntries = currentDayData.entries.map(e => 
-                                e.id === savedEditingEntry.id ? { ...entry, id: savedEditingEntry.id, type: savedTransactionType } : e
-                            ); 
-                        } else { 
-                            newEntries = [...currentDayData.entries, { ...entry, id: generateId(), type: savedTransactionType }]; 
-                        }
-                const newData = { ...latestCloudData, [dateKey]: { ...currentDayData, entries: newEntries } };
-                return { newData, newSettings: latestCloudSettings };
-            });
-                    
-                    if (!success) {
-                        // 如果保存失敗，重新打開模態框
-                        if (savedEditingEntry) {
-                            setEditingEntry(savedEditingEntry);
-                        }
-                        setTransactionType(savedTransactionType);
-                        setShowTransactionModal(true);
-                        showToast('儲存失敗，請重試', 'error');
-                    } else {
-                        showToast(savedEditingEntry ? '記錄已成功更新' : '記錄已成功新增', 'success');
-                    }
-                } catch (fallbackError) {
-                    // 如果舊方式也失敗，重新打開模態框
-                    if (savedEditingEntry) {
-                        setEditingEntry(savedEditingEntry);
-                    }
-                    setTransactionType(savedTransactionType);
-                    setShowTransactionModal(true);
-                    showToast(`儲存失敗：${fallbackError.message}`, 'error');
+                // 操作日誌保存失敗
+                console.error('操作日誌保存失敗:', error);
+                // 重新打開模態框
+                if (savedEditingEntry) {
+                    setEditingEntry(savedEditingEntry);
                 }
+                setTransactionType(savedTransactionType);
+                setShowTransactionModal(true);
+                showToast(`儲存失敗：${error.message}`, 'error');
             }
           };
           
@@ -979,32 +1095,13 @@
                         showToast('刪除失敗，請重試', 'error');
                     }
                 } catch (error) {
-                    // 如果操作日誌失敗，回退到舊方式（向後兼容）
-                    console.log('操作日誌刪除失敗，使用舊方式:', error);
-                    try {
-                        const success = await performSafeUpdate((latestCloudData, latestCloudSettings) => {
-                    const currentDayData = latestCloudData[dateKey] || { entries: [] };
-                    const newEntries = currentDayData.entries.filter(e => e.id !== id);
-                    const newData = { ...latestCloudData, [dateKey]: { ...currentDayData, entries: newEntries } };
-                    return { newData, newSettings: latestCloudSettings };
-                });
-                        
-                        if (success) {
-                            showToast('記錄已成功刪除', 'success');
-                        } else {
-                            // 如果刪除失敗，重新打開模態框
-                            setEditingEntry(savedEditingEntry);
-                            setTransactionType(savedTransactionType);
-                            setShowTransactionModal(true);
-                            showToast('刪除失敗，請重試', 'error');
-                        }
-                    } catch (fallbackError) {
-                        // 如果舊方式也失敗，重新打開模態框
-                        setEditingEntry(savedEditingEntry);
-                        setTransactionType(savedTransactionType);
-                        setShowTransactionModal(true);
-                        showToast(`刪除失敗：${fallbackError.message}`, 'error');
-                    }
+                    // 操作日誌刪除失敗
+                    console.error('操作日誌刪除失敗:', error);
+                    // 重新打開模態框
+                    setEditingEntry(savedEditingEntry);
+                    setTransactionType(savedTransactionType);
+                    setShowTransactionModal(true);
+                    showToast(`刪除失敗：${error.message}`, 'error');
                 }
              }
           };
@@ -1032,30 +1129,27 @@
                       showToast('設定儲存失敗，請重試', 'error');
                   }
               } catch (error) {
-                  // 如果操作日誌失敗，回退到舊方式（向後兼容）
-                  console.log('操作日誌設定保存失敗，使用舊方式:', error);
-                  try {
-                      const success = await performSafeUpdate((latestCloudData, latestCloudSettings) => {
-                  const settingsToSave = { ...initialSettings, ...latestCloudSettings, ...newLocalSettings, displayMetrics: { ...initialSettings.displayMetrics, ...latestCloudSettings.displayMetrics, ...newLocalSettings.displayMetrics } };
-                  return { newData: latestCloudData, newSettings: settingsToSave };
-              });
-                      
-                      if (success) {
-                          showToast('設定已成功儲存', 'success');
-                      } else {
-                          // 如果保存失敗，重新打開設定框
-                          setIsSettingsOpen(true);
-                          showToast('設定儲存失敗，請重試', 'error');
-                      }
-                  } catch (fallbackError) {
-                      // 如果舊方式也失敗，重新打開設定框
-                      setIsSettingsOpen(true);
-                      showToast(`設定儲存失敗：${fallbackError.message}`, 'error');
-                  }
+                  // 操作日誌設定保存失敗
+                  console.error('操作日誌設定保存失敗:', error);
+                  // 重新打開設定框
+                  setIsSettingsOpen(true);
+                  showToast(`設定儲存失敗：${error.message}`, 'error');
               }
           };
 
-          const handleLogout = () => { if(window.confirm('確定要登出嗎？')) { localStorage.removeItem(STORAGE_URL_KEY); localStorage.removeItem(STORAGE_CACHE_KEY); setGoogleUrl(''); setData(initialData); setSettings(initialSettings); setView('login'); } };
+          const handleLogout = () => { 
+              if(window.confirm('確定要登出嗎？')) { 
+                  // 清除所有相關的 localStorage 項目
+                  localStorage.removeItem(STORAGE_URL_KEY); 
+                  localStorage.removeItem(STORAGE_CACHE_KEY); 
+                  localStorage.removeItem('last_operation_id'); // 清除操作 ID，確保下次登入時完整讀取
+                  localStorage.removeItem('last_timestamp'); // 清除時間戳
+                  setGoogleUrl(''); 
+                  setData(initialData); 
+                  setSettings(initialSettings); 
+                  setView('login'); 
+              } 
+          };
 
           // Toast 通知函數
           const showToast = (message, type = 'success') => {
@@ -1069,8 +1163,14 @@
           return (
             <div className="min-h-screen bg-gray-100 font-sans text-gray-900 relative overflow-hidden shadow-2xl border-x border-gray-200">
               {view === 'loading' && <div className="h-screen flex items-center justify-center bg-white"><Icon name="Loader2" className="loader-spin text-blue-600" size={40}/></div>}
-              {view === 'login' && <UI.Views.LoginView onLogin={(url) => { setGoogleUrl(url); fetchFromGoogle(url); }} error={loginError} loading={syncStatus === 'syncing'} />}
-              {view === 'calendar' && <UI.Views.CalendarView currentDate={currentDate} setCurrentDate={setCurrentDate} data={data} syncStatus={syncStatus} onSelectDate={(date) => { setCurrentDate(date); setView('detail'); }} openSettings={() => setIsSettingsOpen(true)} openSearch={() => setIsSearchOpen(true)} openDownload={() => setIsDownloadOpen(true)} onLogout={handleLogout} onRefresh={() => fetchFromGoogle(googleUrl)} settings={settings} />}
+              {view === 'login' && <UI.Views.LoginView onLogin={(url) => { 
+                  // 登入時清除舊的操作 ID，確保完整讀取數據
+                  localStorage.removeItem('last_operation_id');
+                  localStorage.removeItem('last_timestamp');
+                  setGoogleUrl(url); 
+                  fetchFromGoogle(url); 
+              }} error={loginError} loading={syncStatus === 'syncing'} />}
+              {view === 'calendar' && <UI.Views.CalendarView currentDate={currentDate} setCurrentDate={setCurrentDate} data={data} syncStatus={syncStatus} onSelectDate={(date) => { setCurrentDate(date); setView('detail'); }} openSettings={() => setIsSettingsOpen(true)} openSearch={() => setIsSearchOpen(true)} openDownload={() => setIsDownloadOpen(true)} onLogout={handleLogout} onRefresh={() => fetchFromGoogle(googleUrl, false, true)} settings={settings} />}
               {view === 'detail' && <UI.Views.DetailView date={currentDate} data={data[getDateKey(currentDate)] || { entries: [] }} dayMetrics={calculateDayMetrics(getDateKey(currentDate), data, settings)} onBack={() => setView('calendar')} onChangeDate={(days) => { const d = new Date(currentDate); d.setDate(d.getDate()+days); setCurrentDate(d); }} settings={settings} calculateEntryNetValue={calculateEntryNetValue} showTransactionModal={showTransactionModal} setShowTransactionModal={setShowTransactionModal} transactionType={transactionType} setTransactionType={setTransactionType} editingEntry={editingEntry} setEditingEntry={setEditingEntry} onSave={handleSaveTransaction} onDelete={handleDeleteTransaction} showMenuModal={showMenuModal} setShowMenuModal={setShowMenuModal} fullData={data} />}
               {isSettingsOpen && <UI.Modals.SettingsModal settings={settings} onSave={handleSaveSettings} onClose={() => setIsSettingsOpen(false)} />}
               {isSearchOpen && <UI.Modals.SearchModal data={data} onClose={() => setIsSearchOpen(false)} onSelectResult={(d) => { setCurrentDate(new Date(d)); setIsSearchOpen(false); setView('detail'); }} />}
@@ -1128,17 +1228,56 @@
             let totalIncome = 0;
             let totalExpense = 0;
             
+            // 調試信息
+            console.log('📊 計算月度財務指標:', {
+                year,
+                month: month + 1,
+                dataKeys: Object.keys(data),
+                dataKeysCount: Object.keys(data).length
+            });
+            
             Object.keys(data).forEach(dateKey => {
-                const date = new Date(dateKey.substring(0, 4), parseInt(dateKey.substring(4, 6)) - 1, parseInt(dateKey.substring(6, 8)));
-                if (date.getFullYear() === year && date.getMonth() === month) {
-                    const dayMetrics = calculateDayMetrics(dateKey, data, settings);
-                    totalIncome += dayMetrics.dailyIncome;
-                    // 支出 = 總收入 - 淨收入（如果淨收入為負，表示有支出）
-                    const dayExpense = dayMetrics.dailyIncome - dayMetrics.dailyNetIncome;
-                    if (dayExpense > 0) {
-                        totalExpense += dayExpense;
+                try {
+                    // 支持兩種日期格式：YYYYMMDD 或 YYYY-MM-DD
+                    let yearStr, monthStr, dayStr;
+                    if (dateKey.includes('-')) {
+                        // YYYY-MM-DD 格式
+                        const parts = dateKey.split('-');
+                        yearStr = parts[0];
+                        monthStr = parts[1];
+                        dayStr = parts[2];
+                    } else {
+                        // YYYYMMDD 格式
+                        yearStr = dateKey.substring(0, 4);
+                        monthStr = dateKey.substring(4, 6);
+                        dayStr = dateKey.substring(6, 8);
                     }
+                    
+                    const date = new Date(parseInt(yearStr), parseInt(monthStr) - 1, parseInt(dayStr));
+                    
+                    if (date.getFullYear() === year && date.getMonth() === month) {
+                        const dayMetrics = calculateDayMetrics(dateKey, data, settings);
+                        console.log(`✅ 匹配日期 ${dateKey}:`, {
+                            dailyIncome: dayMetrics.dailyIncome,
+                            dailyNetIncome: dayMetrics.dailyNetIncome,
+                            dailyExpense: dayMetrics.dailyIncome - dayMetrics.dailyNetIncome
+                        });
+                        totalIncome += dayMetrics.dailyIncome;
+                        // 支出 = 總收入 - 淨收入（如果淨收入為負，表示有支出）
+                        const dayExpense = dayMetrics.dailyIncome - dayMetrics.dailyNetIncome;
+                        if (dayExpense > 0) {
+                            totalExpense += dayExpense;
+                        }
+                    }
+                } catch (error) {
+                    console.error(`❌ 解析日期失敗 ${dateKey}:`, error);
                 }
+            });
+            
+            console.log('📊 月度財務指標結果:', {
+                monthlyIncome: totalIncome,
+                monthlyExpense: totalExpense,
+                monthlyNetIncome: totalIncome - totalExpense
             });
             
             return {
@@ -1150,7 +1289,25 @@
 
         // Components - MonthlyDashboard 本月財務看板
         UI.Components.MonthlyDashboard = function MonthlyDashboard({ data, settings, currentDate }) {
-            const metrics = calculateMonthlyMetrics(data, settings, currentDate);
+            // 使用 useMemo 確保在 data、settings 或 currentDate 變化時重新計算
+            // 注意：使用更精確的依賴項來檢測變化
+            const dataKeys = Object.keys(data || {}).sort().join(',');
+            const settingsStr = JSON.stringify(settings);
+            const currentDateStr = currentDate ? `${currentDate.getFullYear()}-${currentDate.getMonth()}` : '';
+            
+            // 計算數據的總條目數，用於檢測數據變化
+            const totalEntries = Object.keys(data || {}).reduce((sum, key) => {
+                return sum + ((data[key]?.entries || []).length);
+            }, 0);
+            
+            const metrics = React.useMemo(() => {
+                console.log('🔄 重新計算月度財務指標', {
+                    dataKeys: dataKeys.split(',').length,
+                    totalEntries,
+                    currentDate: currentDateStr
+                });
+                return calculateMonthlyMetrics(data, settings, currentDate);
+            }, [dataKeys, totalEntries, settingsStr, currentDateStr, data, settings, currentDate]);
             
             return (
                 <div className="bg-white p-4 rounded-xl shadow-sm mb-4 mx-2">
@@ -1283,7 +1440,7 @@
                 <div className="mt-4 text-center"><h2 className="text-2xl font-bold">{formattedDate}</h2><div className="text-blue-200 text-xs mt-1 flex justify-center gap-2"><span>${settings.pricePerTon}/噸</span><span>•</span><span>超{settings.dropThreshold}位+${settings.dropSurcharge}</span></div></div>
               </div>
               <div className="bg-white p-4 shadow-sm z-10 grid grid-cols-3 gap-3 border-b border-gray-200"><UI.Components.SummaryCard title="總收入" value={dayMetrics.dailyIncome} secondaryValue={secondaryInfo} color="green" icon="DollarSign" /><UI.Components.SummaryCard title="總支出" value={Math.abs(dayMetrics.dailyIncome - dayMetrics.dailyNetIncome)} color="red" icon="Fuel" /><UI.Components.SummaryCard title="淨收入" value={dayMetrics.dailyNetIncome} color="blue" icon="Receipt" /></div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">{data.entries.length === 0 ? (<div className="text-center text-gray-400 mt-10"><Icon name="Package" className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>無資料</p></div>) : (data.entries.sort((a,b) => b.id - a.id).map(entry => { const netValue = calculateEntryNetValue(entry, settings); return <UI.Components.EntryCard key={entry.id} entry={entry} netValue={netValue} settings={settings} onEdit={handleEdit}/>; }))}</div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">{data.entries.length === 0 ? (<div className="text-center text-gray-400 mt-10"><Icon name="Package" className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>無資料</p></div>) : (data.entries.sort((a,b) => b.id - a.id).map((entry, index) => { const netValue = calculateEntryNetValue(entry, settings, data.entries); return <UI.Components.EntryCard key={`${entry.id}-${index}`} entry={entry} netValue={netValue} settings={settings} onEdit={handleEdit}/>; }))}</div>
               <button onClick={handleOpenAddMenu} className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg shadow-blue-600/40 hover:bg-blue-700 active:scale-90 transition-all z-30"><Icon name="Plus" size={28} /></button>
               {showMenuModal && <UI.Modals.MenuModal onSelect={handleSelectType} onClose={() => setShowMenuModal(false)} />}
               {showTransactionModal && <UI.Modals.TransactionModal initialValues={editingEntry} transactionType={transactionType} onClose={() => { setShowTransactionModal(false); setEditingEntry(null); setTransactionType('delivery'); }} onSave={onSave} onDelete={editingEntry ? () => onDelete(editingEntry.id) : null} fullData={fullData} />}
@@ -1309,7 +1466,7 @@
                 return (
                     <div onClick={() => onEdit(entry)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 active:scale-[0.98] transition-transform cursor-pointer relative group">
                         <div className="flex justify-between items-start mb-2"><div className="flex items-center gap-2"><div className="bg-blue-100 p-2 rounded-full"><Icon name="Truck" size={16} className="text-blue-600"/></div><div><h3 className="font-bold text-lg text-gray-800">{entry.clientName}</h3><div className="text-xs text-gray-500 mt-0.5">{items.map((item, idx) => (<span key={idx} className="block">{item.material} / {item.packages}包</span>))}</div></div></div><div className="text-right"><span className="text-2xl font-bold text-gray-800">{entry.weight}</span><span className="text-xs text-gray-500 ml-1">噸</span></div></div>
-                        <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 p-2 rounded-lg"><div className="flex items-center gap-3"><span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${totalDrops > settings.dropThreshold ? 'bg-orange-100 text-orange-600 font-bold' : 'bg-gray-100 text-gray-600'}`}><Icon name="MapPin" size={10} /> {totalDrops} 位</span>{entry.remark && <span className="text-gray-500 text-xs truncate">備註: {entry.remark}</span>}</div><div className={`font-semibold px-3 py-1 rounded-full ${valueClass}`}>{netValue > 0 ? `+${displayNetValue}` : '$-' }</div></div>
+                        <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 p-2 rounded-lg"><div className="flex items-center gap-3"><span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">第{entry.tripNumber || 1}趟</span><span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs ${totalDrops > settings.dropThreshold ? 'bg-orange-100 text-orange-600 font-bold' : 'bg-gray-100 text-gray-600'}`}><Icon name="MapPin" size={10} /> {totalDrops} 位</span>{entry.remark && <span className="text-gray-500 text-xs truncate">備註: {entry.remark}</span>}</div><div className={`font-semibold px-3 py-1 rounded-full ${valueClass}`}>{netValue > 0 ? `+${displayNetValue}` : '$-' }</div></div>
                     </div>
                 );
             } else if (entry.type === 'fuel') {
@@ -1353,6 +1510,7 @@
                      clientName: safeString(initial?.clientName),
                      weight: safeString(initial?.weight),
                      dropLocations: safeString(initial?.dropLocations || '0'),
+                     tripNumber: safeString(initial?.tripNumber || '1'),
                      items: items.length > 0 ? items : [{ material: '', packages: '' }]
                  };
              } else {
@@ -1408,6 +1566,7 @@
               if (isDelivery) { 
                   savedForm.weight = parseFloat(savedForm.weight) || 0; 
                   savedForm.dropLocations = parseInt(savedForm.dropLocations) || 0; 
+                  savedForm.tripNumber = parseInt(savedForm.tripNumber) || 1; 
                   // 清理空的 items 並確保數字格式
                   savedForm.items = savedForm.items.filter(i => i.material.trim() !== '').map(i => ({
                       material: i.material,
@@ -1492,13 +1651,14 @@
                           <button type="button" onClick={addItem} className="text-sm text-blue-600 font-bold flex items-center gap-1 hover:bg-blue-50 px-2 py-1 rounded"><Icon name="Plus" size={16}/> 新增料品</button>
                       </div>
 
+                      <div><label className="block text-xs text-gray-500 mb-1">趟數 (第幾趟)</label><input type="number" name="tripNumber" min="1" required className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none text-center" value={form.tripNumber} onChange={handleInputChange} placeholder="1" /></div>
                       <div><label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">下貨位數 (最低 0) <Icon name="MapPin" size={12}/></label><div className="flex items-center gap-2"><button type="button" className="p-3 bg-gray-100 rounded-lg hover:bg-gray-200" onClick={() => handleDropChange(-1)}>-</button><input type="number" name="dropLocations" min="0" className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none text-center" value={form.dropLocations} onChange={handleInputChange} /><button type="button" className="p-3 bg-gray-100 rounded-lg hover:bg-gray-200" onClick={() => handleDropChange(1)}>+</button></div></div>
                       <div><label className="block text-xs text-gray-500 mb-1">重量 (噸)</label><input type="number" step="0.01" required className="w-full p-3 bg-blue-50 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-lg font-bold text-blue-800 text-center" name="weight" value={form.weight} onChange={handleInputChange} /></div>
                     </>
                   ) : (
                     <><div><label className="block text-xs text-gray-500 mb-1">支出金額 ($)</label><input type="number" name="amount" step="1" required className="w-full p-3 bg-red-50 rounded-lg border border-red-200 focus:ring-2 focus:ring-red-500 outline-none text-lg font-bold text-red-800 text-center" value={form.amount} onChange={handleInputChange} placeholder="例如: 2000" /></div></>
                   )}
-                  <div><label className="block text-xs text-gray-500 mb-1">備註/摘要</label><textarea name="remark" className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-gray-500 outline-none" rows="2" value={form.remark} onChange={handleInputChange} placeholder={isDelivery ? '例如：客戶要求先送 A 料再送 B 料' : '例如：在中油環北站加油'}></textarea></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">備註/摘要</label><textarea name="remark" className="w-full p-3 bg-gray-50 rounded-lg border focus:ring-2 focus:ring-gray-500 outline-none" rows="2" value={form.remark} onChange={handleInputChange} placeholder={isDelivery ? '例如：客戶要求先送 A 料再送 B 料' : '例如：添加尿素'}></textarea></div>
                   <div className="pt-4 flex gap-3">{initialValues && <button type="button" onClick={handleDelete} disabled={isSaving || isDeleting} className={`flex-1 py-3 rounded-xl font-bold flex justify-center items-center gap-2 ${isDeleting ? 'bg-red-200 text-red-700 cursor-not-allowed' : 'bg-red-50 text-red-600 hover:bg-red-100'} disabled:opacity-50 disabled:cursor-not-allowed`}><Icon name={isDeleting ? "Loader2" : "Trash2"} size={18} className={isDeleting ? "loader-spin" : ""} /> {isDeleting ? '刪除中...' : ''}</button>}<button type="button" onClick={onClose} disabled={isSaving || isDeleting} className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed">取消</button><button type="submit" disabled={isSaving || isDeleting} className={`flex-[2] py-3 rounded-xl text-white font-bold shadow-lg flex justify-center items-center gap-2 ${isSaving ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}><Icon name={isSaving ? "Loader2" : "Save"} size={18} className={isSaving ? "loader-spin" : ""} /> {isSaving ? '儲存中...' : '儲存'}</button></div>
                 </form>
               </div>
@@ -1555,7 +1715,7 @@
             setIsExporting(true);
             setExportProgress(0);
             
-            let headers = ['日期', '類型', '客戶名稱', '料名', '包數', '重量(噸)', '下貨位數', '備註'];
+            let headers = ['日期', '類型', '客戶名稱', '料名', '包數', '重量(噸)', '下貨位數', '趟數', '備註'];
             if (includeSurcharge) headers = [...headers, '基本運費', '位數加價', '總收入(單筆)']; else headers = [...headers, '基本運費'];
             if (includeExpense) headers = [...headers, '支出金額'];
             headers = [...headers, '淨值(單筆)'];
@@ -1588,28 +1748,59 @@
             for (const dateKey of sortedKeys) {
               if (dateKey >= startDate && dateKey <= endDate && data[dateKey].entries?.length > 0) {
                   const dayMetrics = calculateDayMetrics(dateKey, data, settings);
-                  let isSurchargeAddedToFirstDelivery = false; 
-                  let isFirstDeliveryInDay = true; // 追蹤是否為當天第一筆送貨
+                  
+                  // 計算每趟的加價（按趟數分組計算）
+                  const tripSurcharges = {}; // { tripNumber: surchargeAmount }
+                  const dayEntries = data[dateKey].entries || [];
+                  const trips = {}; // { tripNumber: totalDrops }
+                  
+                  // 先計算每趟的總位數
+                  dayEntries.forEach(e => {
+                      if (e.type === 'delivery') {
+                          const tripNumber = parseInt(e.tripNumber) || 1;
+                          const drops = parseInt(e.dropLocations) || 0;
+                          if (!trips[tripNumber]) {
+                              trips[tripNumber] = 0;
+                          }
+                          trips[tripNumber] += drops;
+                      }
+                  });
+                  
+                  // 計算每趟的加價
+                  Object.keys(trips).forEach(tripNumber => {
+                      const tripTotalDrops = trips[tripNumber];
+                      const extraDrops = Math.max(0, tripTotalDrops - settings.dropThreshold);
+                      const tripSurcharge = extraDrops * settings.dropSurcharge;
+                      tripSurcharges[tripNumber] = tripSurcharge;
+                  });
+                  
+                  // 追蹤每趟的第一筆送貨是否已加加價
+                  const tripSurchargeAdded = {}; // { tripNumber: boolean }
                   
                   // 異步處理每個記錄
-                  for (let index = 0; index < data[dateKey].entries.length; index++) {
-                     const entry = data[dateKey].entries[index];
-                     const netValue = calculateEntryNetValue(entry, settings); 
+                  for (let index = 0; index < dayEntries.length; index++) {
+                     const entry = dayEntries[index];
+                     const netValue = calculateEntryNetValue(entry, settings, dayEntries); 
                      const items = getEntryItems(entry);
 
                      if (entry.type === 'delivery') {
-                         const details = calculateDeliveryDetails(entry, settings);
+                         const details = calculateDeliveryDetails(entry, settings, dayEntries);
                          let totalIncomeForEntry = details.totalIncome; 
+                         const tripNumber = parseInt(entry.tripNumber) || 1;
                          
-                         // 位數加價處理：只加到第一筆送貨的第一個 item
+                         // 位數加價處理：按趟數分別計算，每趟的加價加到該趟的第一筆送貨
                          const shouldAddSurcharge = !includeDailySurchargeAsSeparateEntry && 
-                                                    !isSurchargeAddedToFirstDelivery && 
-                                                    isFirstDeliveryInDay;
+                                                    !tripSurchargeAdded[tripNumber] &&
+                                                    tripSurcharges[tripNumber] > 0;
                          
                          if (shouldAddSurcharge) { 
-                             totalIncomeForEntry += dayMetrics.surchargeCost; 
-                             isSurchargeAddedToFirstDelivery = true; 
+                             totalIncomeForEntry += tripSurcharges[tripNumber]; 
+                             tripSurchargeAdded[tripNumber] = true;
                          }
+                         
+                         // 累加每筆送貨記錄的收入（在處理所有 items 之前累加一次）
+                         // 注意：如果 includeDailySurchargeAsSeparateEntry 為 false，加價已經包含在 totalIncomeForEntry 中
+                         periodIncome += totalIncomeForEntry;
                          
                          // 如果有多個料名，每個料名生成一行
                          if (items.length > 0) {
@@ -1624,7 +1815,10 @@
                                      formatForCsv(item.packages) || '', 
                                      // 重量欄位：只有第一個 item 顯示重量，其他 item 留空
                                      isFirstItem ? (formatForCsv(entry.weight) || '') : '', 
-                                     formatForCsv(entry.dropLocations) || '', 
+                                     // 下貨位數欄位：只有第一個 item 顯示下貨位數，其他 item 留空
+                                     isFirstItem ? (formatForCsv(entry.dropLocations) || '') : '', 
+                                     // 趟數欄位：只有第一個 item 顯示趟數，其他 item 留空
+                                     isFirstItem ? (formatForCsv(entry.tripNumber) || '1') : '', 
                                      entry.remark || ''
                                  ];
                                  
@@ -1632,12 +1826,12 @@
                                  if (isFirstItem) {
                                      if (includeSurcharge) { 
                                          row.push(formatForCsv(details.weightCost)); 
-                                         row.push(formatForCsv(shouldAddSurcharge && dayMetrics.surchargeCost > 0 ? dayMetrics.surchargeCost : '')); 
+                                         row.push(formatForCsv(shouldAddSurcharge && tripSurcharges[tripNumber] > 0 ? tripSurcharges[tripNumber] : '')); 
                                          row.push(formatForCsv(totalIncomeForEntry)); 
                                      } else { 
                                          row.push(formatForCsv(totalIncomeForEntry)); 
                                      }
-                         row.push(includeExpense ? '' : null); 
+                                     row.push(includeExpense ? '' : null); 
                                      row.push(formatForCsv(totalIncomeForEntry));
                                  } else {
                                      // 其他 item 行：金額欄位留空
@@ -1671,12 +1865,14 @@
                                  '', 
                                  formatForCsv(entry.weight) || '', 
                                  formatForCsv(entry.dropLocations) || '', 
+                                 formatForCsv(entry.tripNumber) || '1', 
                                  entry.remark || ''
                              ];
                              
+                             const tripNumber = parseInt(entry.tripNumber) || 1;
                              if (includeSurcharge) { 
                                  row.push(formatForCsv(details.weightCost)); 
-                                 row.push(formatForCsv(shouldAddSurcharge && dayMetrics.surchargeCost > 0 ? dayMetrics.surchargeCost : '')); 
+                                 row.push(formatForCsv(shouldAddSurcharge && tripSurcharges[tripNumber] > 0 ? tripSurcharges[tripNumber] : '')); 
                                  row.push(formatForCsv(totalIncomeForEntry)); 
                              } else { 
                                  row.push(formatForCsv(totalIncomeForEntry)); 
@@ -1695,11 +1891,6 @@
                              }
                          }
                          
-                         // 只有第一筆送貨的第一個 item 會加上位數加價
-                         if (isFirstDeliveryInDay) {
-                             periodIncome += totalIncomeForEntry;
-                             isFirstDeliveryInDay = false;
-                         }
                      } else if (entry.type === 'fuel') {
                          // 油錢支出：只有一行
                          const row = [
@@ -1710,6 +1901,7 @@
                              '', 
                              '', 
                              '', 
+                             '', // 趟數欄位留空
                              entry.remark || ''
                          ];
                          
@@ -1735,15 +1927,22 @@
                      }
                   }
                   
-                  if (includeDailySurchargeAsSeparateEntry && dayMetrics.surchargeCost > 0) {
-                      const surchargeAmount = formatForCsv(dayMetrics.surchargeCost); 
-                      const zero = formatForCsv(0);
-                      let surchargeRow = [dateKey, '總位數加價', 'N/A', '', '', '', formatForCsv(dayMetrics.dailyDrops), `超 ${settings.dropThreshold} 位加價`];
-                      if (includeSurcharge) { surchargeRow.push(zero); surchargeRow.push(surchargeAmount); surchargeRow.push(surchargeAmount); } else { surchargeRow.push(surchargeAmount); }
-                      if (includeExpense) { surchargeRow.push(''); }
-                      surchargeRow.push(surchargeAmount); 
-                      rows.push(surchargeRow); 
-                      periodIncome += dayMetrics.surchargeCost;
+                  // 如果選擇單獨顯示加價，則按趟數分別顯示
+                  if (includeDailySurchargeAsSeparateEntry) {
+                      Object.keys(tripSurcharges).sort((a, b) => parseInt(a) - parseInt(b)).forEach(tripNumber => {
+                          const tripSurcharge = tripSurcharges[tripNumber];
+                          if (tripSurcharge > 0) {
+                              const surchargeAmount = formatForCsv(tripSurcharge);
+                              const zero = formatForCsv(0);
+                              const tripTotalDrops = trips[tripNumber];
+                              let surchargeRow = [dateKey, '位數加價', '', '', '', '', formatForCsv(tripTotalDrops), tripNumber, `第${tripNumber}趟超 ${settings.dropThreshold} 位加價`];
+                              if (includeSurcharge) { surchargeRow.push(zero); surchargeRow.push(surchargeAmount); surchargeRow.push(surchargeAmount); } else { surchargeRow.push(surchargeAmount); }
+                              if (includeExpense) { surchargeRow.push(''); }
+                              surchargeRow.push(surchargeAmount); 
+                              rows.push(surchargeRow); 
+                              periodIncome += tripSurcharge;
+                          }
+                      });
                   }
               }
             }
